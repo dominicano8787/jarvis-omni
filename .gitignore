@@ -1,0 +1,23 @@
+# J.A.R.V.I.S. Security & Build Ignore Rules
+# Never commit .env, API keys, credentials, or local databases
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.keystore
+
+# Python & Virtual Environments
+__pycache__/
+*.py[cod]
+.venv/
+.python/
+
+# Local runtime state & temporary files
+data/tmp/
+data/jarvis.db
+data/jarvis.db-journal
+data/jarvis.db-wal
+logs/
+ui/node_modules/
+ms-vscode.powershell-*.vsix

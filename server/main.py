@@ -1264,6 +1264,289 @@ async def api_agent_execute(request: Request):
     return execute_agentic_goal(goal=goal, max_steps=max_steps, mode=mode, preferred_model=preferred_model)
 
 
+# ==============================================================================
+# PHASE 1: CompTIA Security+ (SY0-701) LabEx & Vector RAG Knowledge Base
+# ==============================================================================
+
+from .security_plus_rag import (
+    get_secplus_rag,
+    parse_cloned_labex_readme,
+    SECURITY_PLUS_PORTS,
+    SECURITY_PLUS_ACRONYMS,
+    SECURITY_PLUS_FRAMEWORKS,
+)
+
+@app.get("/api/secplus/status")
+async def api_secplus_status():
+    return get_secplus_rag().get_status()
+
+@app.get("/api/secplus/labs")
+async def api_secplus_labs():
+    labs = parse_cloned_labex_readme()
+    return {"ok": True, "exam_code": "SY0-701", "count": len(labs), "labs": labs}
+
+@app.get("/api/secplus/ports")
+async def api_secplus_ports():
+    return {"ok": True, "exam_code": "SY0-701", "count": len(SECURITY_PLUS_PORTS), "ports": SECURITY_PLUS_PORTS}
+
+@app.get("/api/secplus/acronyms")
+async def api_secplus_acronyms():
+    return {
+        "ok": True,
+        "exam_code": "SY0-701",
+        "count": len(SECURITY_PLUS_ACRONYMS),
+        "acronyms": SECURITY_PLUS_ACRONYMS,
+        "frameworks": SECURITY_PLUS_FRAMEWORKS,
+    }
+
+@app.post("/api/secplus/search")
+async def api_secplus_search(request: Request):
+    data = await request.json()
+    query = data.get("query") or data.get("q") or "CIA Triad Zero Trust"
+    top_k = int(data.get("top_k", 5))
+    category = data.get("category")
+    results = get_secplus_rag().search(query=query, top_k=top_k, category=category)
+    return {"ok": True, "exam_code": "SY0-701", "query": query, "count": len(results), "results": results}
+
+@app.post("/api/secplus/teach")
+async def api_secplus_teach(request: Request):
+    data = await request.json()
+    topic = data.get("topic") or data.get("query") or "Zero Trust Architecture"
+    return get_secplus_rag().teach_topic(topic=topic)
+
+@app.api_route("/api/secplus/quiz", methods=["GET", "POST"])
+async def api_secplus_quiz(request: Request):
+    domain = None
+    count = 4
+    include_pbq = True
+    if request.method == "POST":
+        try:
+            data = await request.json()
+            domain = data.get("domain")
+            count = int(data.get("count", 4))
+            include_pbq = bool(data.get("include_pbq", True))
+        except Exception:
+            pass
+    else:
+        domain = request.query_params.get("domain")
+        if request.query_params.get("count"):
+            count = int(request.query_params["count"])
+    return get_secplus_rag().get_quiz(domain=domain, count=count, include_pbq=include_pbq)
+
+@app.post("/api/secplus/explain-command")
+async def api_secplus_explain_command(request: Request):
+    data = await request.json()
+    command_str = data.get("command") or "nmap -sS -sV -O --script vuln 127.0.0.1"
+    return get_secplus_rag().explain_command(command_str=command_str)
+
+
+# ==============================================================================
+# PHASE 2: Long-Term Memory ("Never Forget") & PC <-> Phone Sync Engine
+# ==============================================================================
+
+from .long_term_memory import get_never_forget
+
+@app.get("/api/memory/never-forget")
+async def api_never_forget_list(category: str | None = None, q: str | None = None, limit: int = 100):
+    nf = get_never_forget()
+    items = nf.list_memories(category=category, query=q, limit=limit)
+    return {
+        "ok": True,
+        "count": len(items),
+        "memories": items,
+        "sync_file": str(nf.db_path),
+    }
+
+@app.post("/api/memory/never-forget")
+async def api_never_forget_add(request: Request):
+    data = await request.json()
+    nf = get_never_forget()
+    item = nf.add_memory(
+        value=data.get("value") or data.get("text") or "",
+        key=data.get("key") or data.get("title"),
+        category=data.get("category", "fact"),
+        tags=data.get("tags"),
+        source_device=data.get("source_device", "windows-pc-exe"),
+        pinned=bool(data.get("pinned", False)),
+        memory_id=data.get("memory_id"),
+    )
+    return {"ok": True, "action": "ADDED", "memory": item}
+
+@app.put("/api/memory/never-forget/{memory_id}")
+async def api_never_forget_edit(memory_id: str, request: Request):
+    data = await request.json()
+    nf = get_never_forget()
+    updated = nf.edit_memory(
+        memory_id=memory_id,
+        new_value=data.get("value") or data.get("new_value") or "",
+        new_key=data.get("key"),
+        new_category=data.get("category"),
+        pinned=data.get("pinned"),
+        source_device=data.get("source_device", "windows-pc-exe"),
+    )
+    if not updated:
+        return JSONResponse(status_code=404, content={"ok": False, "error": f"Memory '{memory_id}' not found."})
+    return {"ok": True, "action": "UPDATED", "memory": updated}
+
+@app.delete("/api/memory/never-forget/{memory_id}")
+async def api_never_forget_delete(memory_id: str):
+    nf = get_never_forget()
+    res = nf.delete_memory(memory_id)
+    if not res.get("deleted"):
+        return JSONResponse(status_code=404, content=res)
+    return res
+
+@app.post("/api/memory/never-forget/command")
+async def api_never_forget_command(request: Request):
+    data = await request.json()
+    cmd = data.get("command") or data.get("text") or "view memories"
+    device = data.get("source_device", "windows-pc-exe")
+    return get_never_forget().execute_command(raw_command=cmd, source_device=device)
+
+@app.post("/api/memory/never-forget/sync")
+async def api_never_forget_sync(request: Request):
+    data = await request.json()
+    client_device = data.get("client_device", "samsung-zfold7-apk")
+    incoming = data.get("memories") or []
+    return get_never_forget().sync_devices(client_device=client_device, incoming_memories=incoming)
+
+
+# ==============================================================================
+# PHASE 3: 7 New Autonomous Modules & Callable Tools
+# ==============================================================================
+
+from .coding_agent_engine import get_coding_engine
+from .anime_studio_engine import get_anime_studio
+from .audio_studio_engine import get_audio_studio
+from .image_editing_engine import get_image_editor
+from .anime_db_engine import get_anime_db
+from .finance_engine import get_finance_engine
+from .self_repair_engine import get_self_repair_engine
+
+# 3.1 Advanced Multi-File Coding & Full-Stack Project Architect
+@app.get("/api/coding/projects")
+async def api_coding_projects():
+    projects = get_coding_engine().list_projects()
+    return {"ok": True, "count": len(projects), "projects": projects}
+
+@app.post("/api/coding/build")
+async def api_coding_build(request: Request):
+    data = await request.json()
+    return get_coding_engine().build_project(
+        project_name=data.get("project_name") or "Stark Omni Portal",
+        description=data.get("description") or "Full-stack web application with FastAPI backend, SQLite DB, and SPA frontend",
+        stack=data.get("stack") or "FastAPI + Tailwind SPA + SQLite + Docker",
+        run_tests=bool(data.get("run_tests", True)),
+    )
+
+# 3.2 Premium Anime Animation Pipeline (Character Sheets + Storyboards + Continuity)
+@app.get("/api/anime-studio/status")
+async def api_anime_studio_status():
+    return get_anime_studio().get_status()
+
+@app.post("/api/anime-studio/character")
+async def api_anime_studio_character(request: Request):
+    data = await request.json()
+    return get_anime_studio().create_character_sheet(
+        name=data.get("name") or "Kaito Horizon",
+        archetype=data.get("archetype") or "Cybernetic Samurai Lead",
+        hair_color=data.get("hair_color") or "#00E5FF (Electric Cyan)",
+        eye_color=data.get("eye_color") or "#F59E0B (Amber Gold)",
+        outfit=data.get("outfit") or "High-collar obsidian tactical haori with neon circuit trim",
+        visual_tags=data.get("visual_tags") or "anime sakuga keyframe, ufotable lighting, 4k cel shaded",
+    )
+
+@app.post("/api/anime-studio/episode")
+async def api_anime_studio_episode(request: Request):
+    data = await request.json()
+    return await get_anime_studio().generate_episode_pipeline(
+        title=data.get("title") or "Limit Break: Awakening",
+        synopsis=data.get("synopsis") or "Johnny Boy unleashes his cyan arc-aura across the rain-slicked rooftops of Neo-Tokyo",
+        character_id=data.get("character_id"),
+        num_scenes=int(data.get("num_scenes", 2)),
+        style_preset=data.get("style_preset") or "Ufotable Sakuga Action",
+    )
+
+# 3.3 Audio Studio (Music, Songs & SFX via ElevenLabs + Multi-Harmonic Synth)
+@app.post("/api/audio/generate")
+async def api_audio_generate(request: Request):
+    data = await request.json()
+    return get_audio_studio().generate_audio(
+        prompt=data.get("prompt") or "Cyberpunk anime opening synthwave anthem",
+        audio_type=data.get("audio_type") or "music",
+        duration_sec=float(data.get("duration_sec", 3.0)),
+        bpm=int(data.get("bpm", 128)),
+        key_scale=data.get("key_scale") or "A_minor",
+    )
+
+# 3.4 Premium Image Editing Suite (BG Removal, 4K Upscale, Inpaint, Color Grade, Style Match)
+@app.post("/api/image-editor/edit")
+async def api_image_editor_edit(request: Request):
+    data = await request.json()
+    return await get_image_editor().edit(
+        operation=data.get("operation") or data.get("tool") or "color_grade",
+        source_url=data.get("source_url"),
+        preset=data.get("preset") or "cyberpunk_neon",
+        reference_url=data.get("reference_url"),
+        prompt=data.get("prompt") or "",
+    )
+
+# 3.5 Live Anime Database (AniList GraphQL + Jikan v4 MyAnimeList API with SQLite Cache)
+@app.api_route("/api/anime-db/search", methods=["GET", "POST"])
+async def api_anime_db_search(request: Request):
+    query = "Solo Leveling"
+    limit = 5
+    if request.method == "POST":
+        data = await request.json()
+        query = data.get("query") or data.get("q") or query
+        limit = int(data.get("limit", 5))
+    else:
+        query = request.query_params.get("q") or request.query_params.get("query") or query
+        if request.query_params.get("limit"):
+            limit = int(request.query_params["limit"])
+    return get_anime_db().search_anime(query=query, limit=limit)
+
+# 3.6 Finance & Market Intelligence (Crypto, Stocks, Personal Finance + Charts + Mandatory Risk Disclosure)
+@app.api_route("/api/finance/analyze", methods=["GET", "POST"])
+async def api_finance_analyze(request: Request):
+    symbol = "BTC"
+    if request.method == "POST":
+        data = await request.json()
+        symbol = data.get("symbol") or data.get("query") or symbol
+    else:
+        symbol = request.query_params.get("symbol") or request.query_params.get("q") or symbol
+    return get_finance_engine().analyze_asset(symbol_or_query=symbol)
+
+@app.post("/api/finance/personal")
+async def api_finance_personal(request: Request):
+    data = await request.json()
+    return get_finance_engine().calculate_personal_finance(
+        monthly_investment=float(data.get("monthly_investment", 500.0)),
+        initial_principal=float(data.get("initial_principal", 5000.0)),
+        annual_return_pct=float(data.get("annual_return_pct", 8.0)),
+        years=int(data.get("years", 10)),
+    )
+
+# 3.7 Self-Repair & Automatic Rollback Engine
+@app.get("/api/self-repair/status")
+async def api_self_repair_status():
+    return get_self_repair_engine().get_status()
+
+@app.post("/api/self-repair/log")
+async def api_self_repair_log(request: Request):
+    data = await request.json()
+    return get_self_repair_engine().log_error(
+        subsystem=data.get("subsystem") or "runtime",
+        error_message=data.get("error_message") or "Diagnostic test error",
+        file_path=data.get("file_path"),
+        traceback_text=data.get("traceback_text"),
+    )
+
+@app.post("/api/self-repair/simulate")
+async def api_self_repair_simulate():
+    return get_self_repair_engine().run_self_repair_simulation()
+
+
 
 # ==============================================================================
 # Live 10-Point System Self-Diagnostic Matrix (v4.0)

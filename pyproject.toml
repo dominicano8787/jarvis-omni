@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jarvis"
+version = "2.0.0"
+description = "J.A.R.V.I.S. - Just A Rather Very Intelligent System: Autonomous Cognitive Core, 3D Arc Reactor HUD, Temporal Orchestrator, CapCut NLE Video Engine & Higgsfield Generative AI Studio for Windows"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "J.A.R.V.I.S. Systems Core" }
+]
+dependencies = [
+    "anthropic>=0.80.0",
+    "google-genai>=2.0.0",
+    "fastapi>=0.118.0",
+    "uvicorn[standard]>=0.37.0",
+    "httpx>=0.28.0",
+    "python-dotenv>=1.1.0",
+    "temporalio>=1.9.0",
+    "pydantic>=2.10.0",
+    "websockets>=14.0",
+    "sse-starlette>=2.0.0",
+    "watchfiles>=1.0.0",
+    "psutil>=6.0.0",
+    "SpeechRecognition>=3.14.0",
+    "mcp>=2.3.0",
+    "python-multipart>=0.0.20",
+]
+
+[project.scripts]
+jarvis = "server.main:run_server"

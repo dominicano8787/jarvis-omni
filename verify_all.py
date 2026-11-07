@@ -159,7 +159,7 @@ def run_verification():
     print("  J.A.R.V.I.S. v4.1 FULL FUNCTIONAL, AGENTIC & GITHUB CLOUD VERIFICATION SUITE")
     print("=" * 78)
     checks_passed = 0
-    total_checks = 27
+    total_checks = 36
 
     with open_verification_client() as client:
         # 1. Backend Status & Voice Profile
@@ -520,14 +520,220 @@ def run_verification():
             f"Run {exec_data['run_id']} ({exec_data['steps_count']} tools in {exec_data['total_duration_ms']} ms)"
         )
 
-    # 27. Native Standalone Executables Verification
+        # 27. PHASE 1: CompTIA Security+ (SY0-701) LabEx Clone, Objective Gap-Fill & Vector RAG Engine
+        r_sp_st = client.get("/api/secplus/status")
+        assert r_sp_st.status_code == 200 and r_sp_st.json().get("ok") is True
+        sp_st = r_sp_st.json()
+        assert sp_st["exam"]["exam_code"] == "SY0-701"
+        assert sp_st["labex_repo_cloned"] is True and sp_st["labex_labs_count"] == 14
+        assert sp_st["objectives_count"] == 28
+        assert sp_st["rag_counts"]["total_documents"] >= 90
+
+        r_sp_q = client.post("/api/secplus/search", json={"query": "Zero Trust Policy Decision Point nmap sha256sum", "top_k": 4})
+        assert r_sp_q.status_code == 200 and r_sp_q.json().get("ok") is True
+        sp_hits = r_sp_q.json()["results"]
+        assert len(sp_hits) == 4 and all(h.get("source_citation") for h in sp_hits)
+
+        r_sp_t = client.post("/api/secplus/teach", json={"topic": "ALE SLE ARO Quantitative Risk Formulas"})
+        assert r_sp_t.status_code == 200 and "SLE = AV * EF" in r_sp_t.json().get("lesson_markdown", "")
+
+        r_sp_qz = client.get("/api/secplus/quiz")
+        assert r_sp_qz.status_code == 200 and len(r_sp_qz.json().get("questions", [])) >= 3
+        assert r_sp_qz.json().get("pbq", {}).get("pbq_id") == "PBQ-01"
+
+        r_sp_cmd = client.post("/api/secplus/explain-command", json={"command": "nmap -sS -sV -O --script vuln 127.0.0.1"})
+        assert r_sp_cmd.status_code == 200 and len(r_sp_cmd.json().get("parsed_flags", [])) >= 4
+        checks_passed += 1
+        print(
+            f"[27/{total_checks}] PASS: CompTIA Security+ (SY0-701) RAG -> "
+            f"{sp_st['labex_labs_count']} LabEx Labs, {sp_st['objectives_count']} Objectives, "
+            f"{sp_st['rag_counts']['total_documents']} Vector Docs, Quiz & PBQ Verified"
+        )
+
+        # 28. PHASE 2: Long-Term Memory ("Never Forget") View, Add, Edit, Delete & Cross-Device Sync
+        r_mem_list = client.get("/api/memory/never-forget")
+        assert r_mem_list.status_code == 200 and r_mem_list.json().get("ok") is True
+        assert r_mem_list.json().get("count", 0) >= 5
+
+        r_mem_add = client.post(
+            "/api/memory/never-forget",
+            json={
+                "memory_id": "mem-test-phase2",
+                "category": "preference",
+                "key": "Anime Rendering Resolution",
+                "value": "Always render anime keyframe storyboards at 4K 16:9 aspect ratio.",
+                "source_device": "windows-pc-exe",
+            },
+        )
+        assert r_mem_add.status_code == 200 and r_mem_add.json().get("ok") is True
+
+        r_mem_edit = client.put(
+            "/api/memory/never-forget/mem-test-phase2",
+            json={
+                "value": "Always render anime keyframe storyboards at 4K 16:9 with 24fps sakuga continuity.",
+                "source_device": "samsung-zfold7-apk",
+            },
+        )
+        assert r_mem_edit.status_code == 200 and r_mem_edit.json()["memory"]["version"] >= 2
+
+        r_mem_sync = client.post(
+            "/api/memory/never-forget/sync",
+            json={
+                "client_device": "samsung-zfold7-apk",
+                "memories": [
+                    {
+                        "memory_id": "mem-zfold7-sync-01",
+                        "category": "project",
+                        "key": "Mobile Sync Verification",
+                        "value": "Synced from Samsung Galaxy Z Fold 7 SM-F966U to PC.",
+                        "version": 1,
+                    }
+                ],
+            },
+        )
+        assert r_mem_sync.status_code == 200 and r_mem_sync.json().get("sync_status") == "SYNCHRONIZED"
+
+        r_mem_del1 = client.delete("/api/memory/never-forget/mem-test-phase2")
+        assert r_mem_del1.status_code == 200 and r_mem_del1.json().get("deleted") is True
+        r_mem_del2 = client.delete("/api/memory/never-forget/mem-zfold7-sync-01")
+        assert r_mem_del2.status_code == 200 and r_mem_del2.json().get("deleted") is True
+        checks_passed += 1
+        print(
+            f"[28/{total_checks}] PASS: Never-Forget Long-Term Memory -> "
+            f"View ({r_mem_sync.json()['total_memories']} items), Add, Edit (v2), Delete & PC<->ZFold7 Sync Verified"
+        )
+
+        # 29. PHASE 3.1: Advanced Multi-File Coding & Full-Stack Project Architect (/api/coding/build)
+        r_code = client.post(
+            "/api/coding/build",
+            json={
+                "project_name": "Stark Quantum Telemetry Portal",
+                "description": "Multi-file full-stack web dashboard with FastAPI backend, SQLite database, Docker deployment, and unit tests",
+                "run_tests": True,
+            },
+        )
+        assert r_code.status_code == 200 and r_code.json().get("ok") is True
+        code_data = r_code.json()
+        assert code_data.get("files_created", 0) >= 8
+        assert "PASSED" in code_data.get("verification", {}).get("integration_test", "")
+        checks_passed += 1
+        print(
+            f"[29/{total_checks}] PASS: Phase 3.1 Advanced Multi-File Coding -> "
+            f"{code_data['files_created']} files built & tested in {code_data['duration_ms']} ms ({code_data['slug']})"
+        )
+
+        # 30. PHASE 3.2: Premium Anime Animation Pipeline (Character Sheets + e-konte Storyboard + Multi-Scene Continuity MP4)
+        r_char = client.post(
+            "/api/anime-studio/character",
+            json={
+                "name": "Johnny Boy (Arc Limit Break)",
+                "archetype": "Cyber-Martial Artist Lead",
+                "hair_color": "#00E5FF (Electric Cyan)",
+                "eye_color": "#FF2A85 (Crimson Aura)",
+            },
+        )
+        assert r_char.status_code == 200 and r_char.json().get("ok") is True
+        char_id = r_char.json()["character"]["character_id"]
+        r_ep = client.post(
+            "/api/anime-studio/episode",
+            json={
+                "title": "Limit Break Episode 1: Rooftop Awakening",
+                "synopsis": "Johnny Boy ignites his cyan arc aura across Neo-Tokyo",
+                "character_id": char_id,
+                "num_scenes": 2,
+            },
+        )
+        assert r_ep.status_code == 200 and r_ep.json().get("ok") is True
+        ep_data = r_ep.json()
+        assert ep_data.get("scenes_count") == 2 and ep_data.get("master_video_url", "").endswith(".mp4")
+        checks_passed += 1
+        print(
+            f"[30/{total_checks}] PASS: Phase 3.2 Anime Studio Pipeline -> "
+            f"Character Sheet ({char_id}, Seed {r_char.json()['character']['seed']}) + 2-Scene Episode ({ep_data['master_video_url']})"
+        )
+
+        # 31. PHASE 3.3: Audio Studio (Music, Songs & SFX via ElevenLabs / Multi-Harmonic Stereo Synth)
+        r_mus = client.post(
+            "/api/audio/generate",
+            json={"prompt": "Cyberpunk anime opening synthwave anthem", "audio_type": "music", "duration_sec": 2.5, "bpm": 128},
+        )
+        assert r_mus.status_code == 200 and r_mus.json().get("ok") is True
+        r_sfx = client.post(
+            "/api/audio/generate",
+            json={"prompt": "Arc Reactor power-up turbine and katana slash", "audio_type": "sfx", "duration_sec": 2.0},
+        )
+        assert r_sfx.status_code == 200 and r_sfx.json().get("ok") is True
+        assert r_mus.json().get("size_bytes", 0) > 100000 and r_sfx.json().get("size_bytes", 0) > 100000
+        checks_passed += 1
+        print(
+            f"[31/{total_checks}] PASS: Phase 3.3 Audio Studio -> "
+            f"Music ({r_mus.json()['media_url']}, {r_mus.json()['size_bytes']:,} B) + SFX ({r_sfx.json()['media_url']}, {r_sfx.json()['size_bytes']:,} B)"
+        )
+
+        # 32. PHASE 3.4: Premium Image Editing Suite (BG Removal, 4K Upscale, Inpaint, Color Grading LUTs, Style Matching)
+        r_grade = client.post(
+            "/api/image-editor/edit",
+            json={"operation": "color_grade", "source_url": img_url, "preset": "cyberpunk_neon"},
+        )
+        assert r_grade.status_code == 200 and r_grade.json().get("ok") is True
+        r_style = client.post(
+            "/api/image-editor/edit",
+            json={"operation": "style_match", "source_url": img_url, "reference_url": bg_url, "preset": "anime_cel_vibrant"},
+        )
+        assert r_style.status_code == 200 and r_style.json().get("ok") is True
+        checks_passed += 1
+        print(
+            f"[32/{total_checks}] PASS: Phase 3.4 Premium Image Editor -> "
+            f"Color Grade ({r_grade.json()['media_url']}) + Style Match ({r_style.json()['media_url']})"
+        )
+
+        # 33. PHASE 3.5: Live Anime Database (AniList GraphQL + Jikan v4 MyAnimeList API with SQLite Caching)
+        r_ani = client.get("/api/anime-db/search", params={"q": "Solo Leveling"})
+        assert r_ani.status_code == 200 and r_ani.json().get("ok") is True
+        ani_data = r_ani.json()
+        assert ani_data.get("count", 0) >= 1 and "Solo Leveling" in ani_data["results"][0]["title_english"]
+        checks_passed += 1
+        print(
+            f"[33/{total_checks}] PASS: Phase 3.5 Anime Database (AniList+Jikan) -> "
+            f"Found '{ani_data['results'][0]['title_english']}' (Score {ani_data['results'][0]['score']}, cache_hit={ani_data['cache_hit']})"
+        )
+
+        # 34. PHASE 3.6: Live Finance & Market Intelligence (Crypto, Stocks, Personal Finance + Charts + Risk Disclosures)
+        r_fin = client.post("/api/finance/analyze", json={"symbol": "BTC"})
+        assert r_fin.status_code == 200 and r_fin.json().get("ok") is True
+        fin_data = r_fin.json()
+        assert fin_data["mode"] == "INFORMATION_AND_ANALYSIS_ONLY_NO_TRADING"
+        assert "RISK DISCLOSURE" in fin_data.get("risk_disclosure", "")
+        assert fin_data.get("chart_url", "").endswith(".png")
+        r_pf = client.post("/api/finance/personal", json={"monthly_investment": 600, "initial_principal": 10000, "annual_return_pct": 8.0, "years": 10})
+        assert r_pf.status_code == 200 and r_pf.json().get("projected_final_balance_usd", 0) > 100000
+        checks_passed += 1
+        print(
+            f"[34/{total_checks}] PASS: Phase 3.6 Finance & Risk Analyzer -> "
+            f"BTC (${fin_data['price_usd']:,.2f}, Chart {fin_data['chart_url']}) + 10Y Personal Finance (${r_pf.json()['projected_final_balance_usd']:,.2f}) + Risk Disclosure"
+        )
+
+        # 35. PHASE 3.7: Autonomic Self-Repair & Auto-Rollback Engine (/api/self-repair/simulate)
+        r_sr = client.post("/api/self-repair/simulate")
+        assert r_sr.status_code == 200 and r_sr.json().get("ok") is True
+        sr_data = r_sr.json()
+        assert sr_data["rollback_drill"]["rolled_back"] is True
+        assert sr_data["rollback_drill"]["integrity_restored_on_rollback"] is True
+        assert sr_data["repair_commit_drill"]["ok"] is True
+        checks_passed += 1
+        print(
+            f"[35/{total_checks}] PASS: Phase 3.7 Self-Repair & Auto-Rollback -> "
+            f"Faulty Patch Rolled Back (SHA-256 Restored={sr_data['rollback_drill']['integrity_restored_on_rollback']}) + Clean Fix Committed"
+        )
+
+    # 36. Native Standalone Executables Verification
     jarvis_exe = ROOT / "JARVIS.exe"
     setup_exe = ROOT / "JARVIS-Setup-v3.0-x64.exe"
     assert jarvis_exe.is_file() and setup_exe.is_file()
     p1 = subprocess.run([str(jarvis_exe), "--verify"], capture_output=True, text=True, timeout=15)
     assert p1.returncode == 0 and "JARVIS_STANDALONE_EXE_VERIFY: OK" in p1.stdout
     checks_passed += 1
-    print(f"[27/{total_checks}] PASS: Standalone JARVIS.exe & JARVIS-Setup-v4.0-x64.exe ({setup_exe.stat().st_size:,} bytes) Verified")
+    print(f"[36/{total_checks}] PASS: Standalone JARVIS.exe & JARVIS-Setup-v4.0-x64.exe ({setup_exe.stat().st_size:,} bytes) Verified")
 
     print("=" * 78)
     print(f"  RESULT: {checks_passed}/{total_checks} CHECKS PASSED (100% VERIFIED WITH ZERO ERRORS)")

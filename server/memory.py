@@ -67,11 +67,19 @@ CREATE TABLE IF NOT EXISTS usage (
 
 class Store:
     def __init__(self, path: Path | None = None):
+        import atexit
         self.path = path or config.DB_PATH
         self._conn = sqlite3.connect(self.path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(SCHEMA)
         self._conn.commit()
+        atexit.register(self.close)
+
+    def close(self) -> None:
+        try:
+            self._conn.close()
+        except Exception:
+            pass
 
     def ensure_session(self, session_id: str, expert: str) -> None:
         now = time.time()

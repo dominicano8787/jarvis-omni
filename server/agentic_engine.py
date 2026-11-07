@@ -88,6 +88,69 @@ AGENT_TOOLS_CATALOG: List[Dict[str, Any]] = [
         "description": "Probes CPU/RAM/GPU telemetry, Temporal durability, and 10-point subsystem readiness.",
         "serverless_compatible": True,
     },
+    {
+        "id": "secplus_rag_query",
+        "name": "CompTIA Security+ (SY0-701) & LabEx RAG Engine",
+        "category": "Cybersecurity & Training",
+        "description": "Searches the CompTIA Security+ SY0-701 + LabEx 14-lab vector RAG database with source citations.",
+        "serverless_compatible": True,
+    },
+    {
+        "id": "never_forget_memory_vault",
+        "name": "Never-Forget Cross-Device Persistent Memory Vault",
+        "category": "Long-Term Memory",
+        "description": "Views, adds, edits, deletes, and syncs persistent memories across PC (.exe) and Android (.apk).",
+        "serverless_compatible": True,
+    },
+    {
+        "id": "advanced_fullstack_coder",
+        "name": "Multi-File Full-Stack Project Architect & Debugger",
+        "category": "Software Engineering",
+        "description": "Plans, writes, tests, and debugs multi-file full-stack web projects (Frontend, Backend, SQLite DB, Docker, Tests).",
+        "serverless_compatible": True,
+    },
+    {
+        "id": "anime_studio_pipeline",
+        "name": "Premium Anime Animation & Continuity Pipeline",
+        "category": "Anime Studio",
+        "description": "Generates locked Character Design Sheets, e-konte Storyboards, and multi-scene stitched MP4 anime episodes.",
+        "serverless_compatible": True,
+    },
+    {
+        "id": "audio_music_sfx_studio",
+        "name": "ElevenLabs & Multi-Harmonic Music/SFX Synthesizer",
+        "category": "Audio Studio",
+        "description": "Synthesizes playable stereo music, songs, and sci-fi/anime sound effects (.wav/.mp3).",
+        "serverless_compatible": True,
+    },
+    {
+        "id": "premium_image_editor",
+        "name": "5-Stage Premium Image Editor (BG Remove, 4K, Inpaint, LUT, Style Match)",
+        "category": "Creative Studio",
+        "description": "Executes background removal, 4K upscaling, inpainting, cinema LUT color grading, and reference style matching.",
+        "serverless_compatible": True,
+    },
+    {
+        "id": "live_anime_database",
+        "name": "AniList GraphQL & Jikan v4 MyAnimeList Intelligence",
+        "category": "Anime Intelligence",
+        "description": "Queries live AniList & Jikan anime APIs with SQLite caching for seasons, studios, scores, and synopses.",
+        "serverless_compatible": True,
+    },
+    {
+        "id": "finance_market_analyzer",
+        "name": "Live Crypto, Stocks & Personal Finance Analyzer (With Risk Disclosures)",
+        "category": "Finance Intelligence",
+        "description": "Analyzes live crypto/equity markets with technical charts and mandatory risk disclosures (never executes trades).",
+        "serverless_compatible": True,
+    },
+    {
+        "id": "self_repair_autonomic",
+        "name": "Autonomic Self-Repair & Transactional Rollback Engine",
+        "category": "System Resilience",
+        "description": "Logs errors, diagnoses root causes, snapshots files (.bak), verifies patches, and auto-rolls back failed fixes.",
+        "serverless_compatible": True,
+    },
 ]
 
 
@@ -205,6 +268,12 @@ def _select_tools_for_goal(goal: str) -> List[Dict[str, str]]:
         })
 
     # Step 2: Domain-specific specialist tool invocation
+    if any(k in g for k in ["sec+", "security+", "sy0-701", "comptia", "labex", "zero trust", "pki", "nmap", "firewall", "forensics"]):
+        plan.append({
+            "tool": "secplus_rag_query",
+            "thought": "Query CompTIA Security+ (SY0-701) + LabEx 14-lab vector RAG database with cited sources.",
+            "input": goal[:120],
+        })
     if any(k in g for k in ["ghidra", "binary", "reverse", "decompile", "elf", "pe", "entropy", "malware", "security"]):
         plan.append({
             "tool": "ghidra_binary_triage",
@@ -342,6 +411,15 @@ def _run_tool(tool_id: str, tool_input: str, goal: str) -> Dict[str, Any]:
                 f"GitHub Cloud Mirror={GITHUB_PAGES_URL} (ACTIVE) | Z Fold 7 APK & Standalone EXE Synced."
             )
             artifacts["telemetry"] = {"cpu_percent": cpu, "ram_percent": ram}
+
+        elif tool_id == "secplus_rag_query":
+            from server.security_plus_rag import get_secplus_rag
+            hits = get_secplus_rag().search(tool_input or goal, top_k=3)
+            observation = (
+                f"CompTIA Security+ (SY0-701) RAG Retrieved {len(hits)} cited documents: "
+                + "; ".join(f"{h['title']} [{h['source_citation']}] (score={h['score']})" for h in hits)
+            )
+            artifacts["secplus_hits"] = hits
 
         else:
             observation = f"Executed autonomous tool '{tool_id}' on input '{tool_input}'."

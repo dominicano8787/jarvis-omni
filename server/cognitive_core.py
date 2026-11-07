@@ -142,8 +142,11 @@ def evaluate_math_expression(expr: str) -> float | int | None:
 
 def _search_web_sync(query: str, max_results: int = 5) -> list[dict]:
     try:
-        from duckduckgo_search import DDGS
-        results = DDGS().text(query, max_results=max_results)
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            from duckduckgo_search import DDGS
+            results = DDGS().text(query, max_results=max_results)
         return results or []
     except Exception:
         return []
@@ -175,6 +178,13 @@ async def query_real_llm(
         f"If they ask for creative writing, scripts, or storyboards (such as Limit Break: Johnny Boy), write it in full detail. "
         f"Never give a generic placeholder response."
     )
+    try:
+        from .long_term_memory import get_never_forget
+        mem_ctx = get_never_forget().get_context_summary(max_items=10)
+        if mem_ctx:
+            sys_prompt += f"\n\n{mem_ctx}"
+    except Exception:
+        pass
     if extra_context:
         sys_prompt += f"\n\nLIVE CONTEXT / TOOL DATA:\n{extra_context}"
 
@@ -404,6 +414,186 @@ class JarvisCognitiveCore:
                 return
             except Exception as e:
                 yield ("telemetry", {"phase": "AGENT_ALERT", "text": f"Autonomous agent notice: {e}"})
+
+        # ----------------------------------------------------------------------
+        # 0B-4. COMPTIA SECURITY+ (SY0-701) RAG KNOWLEDGE BASE, TEACHING & QUIZ
+        # ----------------------------------------------------------------------
+        if any(
+            k in lower
+            for k in (
+                "security+",
+                "sec+",
+                "sy0-701",
+                "comptia",
+                "labex",
+                "quiz me on security",
+                "security quiz",
+                "explain command:",
+                "zero trust",
+                "sle =",
+                "ale =",
+                "order of volatility",
+            )
+        ):
+            yield ("telemetry", {"phase": "SECPLUS_RAG", "text": "Querying CompTIA Security+ (SY0-701) Vector RAG & LabEx Knowledge Base..."})
+            try:
+                from .security_plus_rag import get_secplus_rag
+                rag = get_secplus_rag()
+                if "quiz" in lower:
+                    q_data = rag.get_quiz(count=2, include_pbq=True)
+                    q_blocks = []
+                    for q in q_data["questions"]:
+                        opts = "\n".join(f"  - {o}" for o in q["options"])
+                        q_blocks.append(
+                            f"**{q['id']} (Domain {q['domain']} | Objective {q['objective']})**: {q['question']}\n{opts}\n"
+                            f"  - **Answer & Explanation:** {q['explanation']}\n  - *Source: {q['source']}*"
+                        )
+                    pbq = q_data.get("pbq")
+                    pbq_md = ""
+                    if pbq:
+                        sol_lines = "\n".join(f"  - **{k}**: {v}" for k, v in pbq["solution"].items())
+                        pbq_md = f"\n\n### 🛡️ Interactive PBQ: {pbq['title']}\n{pbq['scenario']}\n\n**Solution Breakdown:**\n{sol_lines}\n*Source: {pbq['source']}*"
+                    reply = "### 🎓 CompTIA Security+ (`SY0-701`) Practice Quiz & PBQ Simulator\n\n" + "\n\n".join(q_blocks) + pbq_md
+                elif "explain command" in lower:
+                    cmd_part = prompt.split(":", 1)[-1].strip() if ":" in prompt else prompt
+                    exp = rag.explain_command(cmd_part)
+                    flags_md = "\n".join(f"- `{f['flag']}`: {f['meaning']}" for f in exp["parsed_flags"]) or "- Standard execution flags"
+                    reply = (
+                        f"### 🔍 Security+ Command Analyzer: `{exp['command']}`\n"
+                        f"- **Summary:** {exp['summary']}\n"
+                        f"- **SY0-701 Objective:** `{exp['sy0_701_objective']}`\n"
+                        f"- **LabEx Lab Reference:** *{exp['labex_reference']}*\n"
+                        f"- **Operational Risk Level:** **{exp['risk_level']}**\n\n"
+                        f"#### Flag Breakdown\n{flags_md}"
+                    )
+                else:
+                    lesson = rag.teach_topic(prompt)
+                    reply = lesson["lesson_markdown"]
+                for word in reply.split(" "):
+                    yield ("token", {"text": ("" if word == reply.split(" ")[0] else " ") + word})
+                    await asyncio.sleep(0.005)
+                yield ("complete", {"status": "COMPLETE", "engine": "JARVIS CompTIA Security+ (SY0-701) RAG Core"})
+                return
+            except Exception as e:
+                yield ("telemetry", {"phase": "SECPLUS_ALERT", "text": f"Security+ RAG notice: {e}"})
+
+        # ----------------------------------------------------------------------
+        # 0B-5. PHASE 2: NEVER-FORGET LONG-TERM MEMORY COMMANDS (VIEW / ADD / EDIT / DELETE)
+        # ----------------------------------------------------------------------
+        try:
+            from .long_term_memory import get_never_forget
+            nf = get_never_forget()
+            if any(
+                lower.startswith(prefix)
+                for prefix in (
+                    "remember that ",
+                    "remember: ",
+                    "never forget ",
+                    "save to memory:",
+                    "what do you remember",
+                    "show memories",
+                    "view memories",
+                    "list memories",
+                    "edit memory ",
+                    "update memory ",
+                    "delete memory ",
+                    "forget memory ",
+                    "remove memory ",
+                )
+            ):
+                yield ("telemetry", {"phase": "NEVER_FORGET_MEMORY", "text": "Accessing Never-Forget Persistent Memory Vault (PC + Z Fold 7 Sync)..."})
+                cmd_res = nf.execute_command(prompt, source_device="chat-command")
+                if cmd_res.get("action") == "VIEW":
+                    mem_lines = "\n".join(
+                        f"- **`{m['memory_id']}`** (`{m['category']}`) **{m['key']}**: {m['value']} *(v{m['version']}, {m['source_device']})*"
+                        for m in cmd_res.get("memories", [])[:20]
+                    )
+                    reply = (
+                        f"### 🧠 J.A.R.V.I.S. Never-Forget Persistent Memory Vault ({cmd_res['count']} items)\n\n"
+                        f"{mem_lines}\n\n"
+                        f"*Commands: `remember that <fact>` | `edit memory <id>: <new value>` | `delete memory <id>`*"
+                    )
+                else:
+                    reply = f"### 🧠 Never-Forget Memory Updated (`{cmd_res.get('action')}`)\n\n{cmd_res.get('message')}"
+                for word in reply.split(" "):
+                    yield ("token", {"text": ("" if word == reply.split(" ")[0] else " ") + word})
+                    await asyncio.sleep(0.005)
+                yield ("complete", {"status": "COMPLETE", "engine": "JARVIS Never-Forget Memory Vault"})
+                return
+            else:
+                nf.log_conversation_and_extract(session_id="main", role="user", content=prompt)
+        except Exception as e:
+            yield ("telemetry", {"phase": "MEMORY_NOTICE", "text": f"Memory vault notice: {e}"})
+
+        # ----------------------------------------------------------------------
+        # 0B-6. PHASE 3 DISPATCHERS: ANIME DB, FINANCE, AUDIO, ANIME STUDIO, SELF-REPAIR, FULL-STACK CODING
+        # ----------------------------------------------------------------------
+        if any(k in lower for k in ("anilist", "myanimelist", "jikan", "anime database", "anime season", "frieren", "solo leveling", "dandadan")):
+            yield ("telemetry", {"phase": "ANIME_DB", "text": "Querying AniList GraphQL & Jikan v4 (MyAnimeList) with SQLite Cache..."})
+            try:
+                from .anime_db_engine import get_anime_db
+                res = get_anime_db().search_anime(prompt, limit=4)
+                items_md = "\n\n".join(
+                    f"- **{a['title_english']}** (*{a['title_romaji']}*) — Score: **{a['score']}/10** | Status: `{a['status']}` | Season: `{a['season']}` | Studio: {', '.join(a['studios'])}\n  {a['synopsis']}"
+                    for a in res["results"]
+                )
+                reply = f"### 🎌 J.A.R.V.I.S. Live Anime Intelligence (AniList + Jikan Cache)\n\n{items_md}"
+                for word in reply.split(" "):
+                    yield ("token", {"text": ("" if word == reply.split(" ")[0] else " ") + word})
+                    await asyncio.sleep(0.005)
+                yield ("complete", {"status": "COMPLETE", "engine": "JARVIS AniList + Jikan Anime Database"})
+                return
+            except Exception as e:
+                yield ("telemetry", {"phase": "ANIME_DB_ALERT", "text": f"Anime DB notice: {e}"})
+
+        if any(k in lower for k in ("stock", "crypto", "bitcoin", "btc", "ethereum", "nvda", "nvidia", "s&p 500", "personal finance", "market analysis")):
+            yield ("telemetry", {"phase": "FINANCE_ENGINE", "text": "Analyzing market telemetry, Bollinger Bands & Risk Metrics..."})
+            try:
+                from .finance_engine import get_finance_engine
+                fin = get_finance_engine().analyze_asset(prompt)
+                ind = fin["indicators"]
+                reply = (
+                    f"### 📈 J.A.R.V.I.S. Market & Risk Analysis — **{fin['name']} (`{fin['symbol']}`)**\n"
+                    f"- **Asset Class:** {fin['asset_class']}\n"
+                    f"- **Live Price:** `${fin['price_usd']:,.2f} USD` (`{fin['change_24h_pct']:+.2f}%` 24h)\n"
+                    f"- **Technical Indicators:** SMA-20 `${ind['sma_period']:,.2f}` | Bollinger Band `[${ind['bollinger_lower']:,.2f} – ${ind['bollinger_upper']:,.2f}]`\n"
+                    f"- **Risk & Volatility Profile:** Annualized Volatility `~{ind['volatility_annual_pct']}%` | Max Historical Drawdown `{ind['max_drawdown_hist_pct']}%`\n\n"
+                    f"> {fin['risk_disclosure']}"
+                )
+                for word in reply.split(" "):
+                    yield ("token", {"text": ("" if word == reply.split(" ")[0] else " ") + word})
+                    await asyncio.sleep(0.005)
+                yield (
+                    "complete",
+                    {
+                        "status": "COMPLETE",
+                        "engine": "JARVIS Quantitative Finance & Risk Engine",
+                        "media": {"type": "image", "url": fin["chart_url"], "prompt": f"{fin['symbol']} Technical Chart"},
+                    },
+                )
+                return
+            except Exception as e:
+                yield ("telemetry", {"phase": "FINANCE_ALERT", "text": f"Finance engine notice: {e}"})
+
+        if any(k in lower for k in ("self-repair", "self repair", "auto-rollback", "diagnose errors")):
+            yield ("telemetry", {"phase": "SELF_REPAIR", "text": "Running transactional Self-Repair & Auto-Rollback verification..."})
+            try:
+                from .self_repair_engine import get_self_repair_engine
+                sim = get_self_repair_engine().run_self_repair_simulation()
+                rb = sim["rollback_drill"]
+                cm = sim["repair_commit_drill"]
+                reply = (
+                    f"### 🛠️ J.A.R.V.I.S. Autonomic Self-Repair & Rollback Report\n"
+                    f"1. **Faulty Patch Drill (`{rb['repair_id']}`)**: Rolled Back = `{rb['rolled_back']}` | SHA-256 Restored = `{rb['integrity_restored_on_rollback']}` (*Reason: {rb['failure_reason']}*)\n"
+                    f"2. **Verified Fix Commit (`{cm['repair_id']}`)**: Committed = `{cm['ok']}` | Final SHA-256 = `{cm['final_sha256'][:16]}...`"
+                )
+                for word in reply.split(" "):
+                    yield ("token", {"text": ("" if word == reply.split(" ")[0] else " ") + word})
+                    await asyncio.sleep(0.005)
+                yield ("complete", {"status": "COMPLETE", "engine": "JARVIS Self-Repair Engine"})
+                return
+            except Exception as e:
+                yield ("telemetry", {"phase": "SELF_REPAIR_ALERT", "text": f"Self-repair notice: {e}"})
 
         # ----------------------------------------------------------------------
         # 0C. LIVE DESKTOP SCREENSHOT CAPTURE IN CHAT

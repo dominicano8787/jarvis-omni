@@ -35,6 +35,7 @@ from . import config
 FFMPEG_BIN = shutil.which("ffmpeg") or r"D:\Apps\ffmpeg\bin\ffmpeg.exe"
 
 CREATIVE_DIR = config.DATA_DIR / "creative_assets"
+ASSETS_DIR = CREATIVE_DIR
 RENDERS_DIR = config.DATA_DIR / "renders"
 UPLOADS_DIR = config.DATA_DIR / "uploads"
 TTS_CACHE_DIR = config.DATA_DIR / "audio" / "tts_cache"
