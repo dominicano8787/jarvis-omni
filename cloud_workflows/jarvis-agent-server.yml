@@ -1,0 +1,40 @@
+name: J.A.R.V.I.S. Autonomous Agent Cloud Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      goal:
+        description: "Autonomous ReAct Agent Objective"
+        required: false
+        default: "Audit J.A.R.V.I.S. GitHub Cloud Server and verify all subsystems"
+  repository_dispatch:
+    types: [jarvis-agent-goal]
+
+permissions:
+  contents: read
+  models: read
+
+jobs:
+  execute-autonomous-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Execute J.A.R.V.I.S. Autonomous ReAct Agent Loop
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JARVIS_GOAL: ${{ github.event.inputs.goal || 'Audit J.A.R.V.I.S. GitHub Cloud Server and verify all subsystems' }}
+        run: |
+          python3 -c "
+          import json, os
+          from server.agentic_engine import execute_agentic_goal
+          goal = os.environ.get('JARVIS_GOAL', 'Audit J.A.R.V.I.S. GitHub Cloud Server')
+          res = execute_agentic_goal(goal=goal, max_steps=4)
+          print(json.dumps(res, indent=2))
+          "

@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.stark.jarvis.zfold7"
+    android:versionCode="400"
+    android:versionName="4.0.0-SM-F966U">
+
+    <uses-sdk
+        android:minSdkVersion="29"
+        android:targetSdkVersion="35" />
+
+    <!-- Network, Audio, Camera, Haptics & Foldable Hinge Sensor Permissions -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Samsung Galaxy Z Fold 7 (SM-F966U) Hardware Capabilities -->
+    <uses-feature android:name="android.hardware.sensor.hinge_angle" android:required="false" />
+    <uses-feature android:name="android.software.picture_in_picture" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:glEsVersion="0x00030002" android:required="true" />
+
+    <application
+        android:allowBackup="true"
+        android:hardwareAccelerated="true"
+        android:largeHeap="true"
+        android:label="@string/app_name"
+        android:icon="@drawable/ic_launcher"
+        android:usesCleartextTraffic="true"
+        android:resizeableActivity="true"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+
+        <!-- Samsung One UI 8.0 Foldable Multi-Display Continuity & DeX Flags -->
+        <meta-data android:name="android.max_aspect" android:value="2.4" />
+        <meta-data android:name="android.allow_multiple_resumed_activities" android:value="true" />
+        <meta-data android:name="com.samsung.android.keepalive.density" android:value="true" />
+        <meta-data android:name="com.samsung.android.multidisplay.keep_process_alive" android:value="true" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:resizeableActivity="true"
+            android:supportsPictureInPicture="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|uiMode|density">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Samsung Multi-Window & DeX Support -->
+            <layout
+                android:defaultWidth="1092dp"
+                android:defaultHeight="984dp"
+                android:minWidth="320dp"
+                android:minHeight="480dp" />
+        </activity>
+    </application>
+</manifest>

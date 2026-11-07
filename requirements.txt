@@ -1,0 +1,19 @@
+# J.A.R.V.I.S. Windows Cognitive System Core Requirements v3.0.0
+anthropic>=0.80.0
+google-genai>=2.0.0
+fastapi>=0.118.0
+uvicorn[standard]>=0.37.0
+httpx>=0.28.0
+python-dotenv>=1.1.0
+temporalio>=1.9.0
+pydantic>=2.10.0
+websockets>=14.0
+sse-starlette>=2.0.0
+watchfiles>=1.0.0
+psutil>=6.0.0
+SpeechRecognition>=3.14.0
+mcp>=2.3.0
+python-multipart>=0.0.20
+edge-tts>=7.0.0
+pillow>=10.0.0
+duckduckgo-search>=8.0.0

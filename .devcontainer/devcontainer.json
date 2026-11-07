@@ -1,0 +1,14 @@
+{
+  "name": "J.A.R.V.I.S. v4.1 Autonomous Cloud Server (Codespaces)",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "forwardPorts": [8777],
+  "portsAttributes": {
+    "8777": {
+      "label": "J.A.R.V.I.S. v4.1 Cloud Server",
+      "onAutoForward": "openBrowser",
+      "visibility": "public"
+    }
+  },
+  "postCreateCommand": "pip install -r requirements.txt",
+  "postStartCommand": "python -m uvicorn server.main:app --host 0.0.0.0 --port 8777"
+}
