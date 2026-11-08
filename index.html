@@ -4,14 +4,140 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='none' stroke='%2300f0ff' stroke-width='6'/><circle cx='50' cy='50' r='20' fill='%2300f0ff'/></svg>" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#050810" />
+    <link rel="manifest" href="./manifest.json" />
     <title>J.A.R.V.I.S. V8 // Systems Architecture HUD</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Share+Tech+Mono&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
     <script type="module" crossorigin src="./assets/index-CRhZ5DKE.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-BU5osPZe.css">
+    <style>
+      /* J.A.R.V.I.S. connection pill — Online / Local / Offline (top right). */
+      #jarvis-conn-pill { position: fixed; top: 10px; right: 12px; z-index: 9999; display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: rgba(5, 8, 16, .72); border: 1px solid rgba(0, 240, 255, .35); color: #cfe9ef; font-family: 'Share Tech Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; pointer-events: none; backdrop-filter: blur(4px); }
+      #jarvis-conn-pill .jarvis-conn-dot { width: 7px; height: 7px; border-radius: 50%; background: #ff5c5c; box-shadow: 0 0 6px #ff5c5c; }
+      #jarvis-conn-pill.jarvis-conn-local .jarvis-conn-dot { background: #ffb020; box-shadow: 0 0 6px #ffb020; }
+      #jarvis-conn-pill.jarvis-conn-online .jarvis-conn-dot { background: #00e676; box-shadow: 0 0 6px #00e676; }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('./sw.js').catch(function (err) {
+            console.warn('Service worker registration failed:', err);
+          });
+        });
+      }
+    </script>
+    <div id="jarvis-conn-pill" class="jarvis-conn-offline" title="Connection status: Online = cloud backend, Local = PC agent, Offline = no backend reachable"><span class="jarvis-conn-dot"></span><span id="jarvis-conn-label">Offline</span></div>
+    <script>
+      /* J.A.R.V.I.S. connection pill — Online / Local / Offline.
+       *
+       * Rules:
+       * - "Online" is ONLY shown when config.json has a non-empty
+       *   cloud_backend.url AND that URL answers /api/status. The cloud
+       *   backend is not deployed yet (config.json says "not_configured"),
+       *   so Online is unreachable by design until a proxy URL exists.
+       * - "Local" means the PC agent answered /api/status (loopback first,
+       *   then the LAN address from config.json).
+       * - Anything else — browser offline, config unreadable, every probe
+       *   failing — shows "Offline". The script never throws.
+       *
+       * Notes:
+       * - config.json is served by GitHub Pages, but the local backend has
+       *   no route for it (it serves ui/dist/index.html at / only), so a
+       *   missing config.json falls back to the loopback default instead of
+       *   being treated as Offline.
+       * - From the https:// Pages origin, plain-http loopback/LAN probes can
+       *   be blocked by the browser (mixed content / private-network rules),
+       *   so Local detection is most reliable when the page is served over
+       *   http (start-jarvis-local.bat) or once the HTTPS tunnel exists.
+       */
+      (function () {
+        var pill = document.getElementById('jarvis-conn-pill');
+        var label = document.getElementById('jarvis-conn-label');
+        var CHECK_MS = 30000;
+        var PROBE_MS = 2500;
+
+        function setState(state) {
+          try {
+            pill.className = 'jarvis-conn-' + state;
+            label.textContent = state.charAt(0).toUpperCase() + state.slice(1);
+          } catch (e) { /* never throw */ }
+        }
+
+        function probe(url) {
+          try {
+            var ctrl = new AbortController();
+            var timer = setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, PROBE_MS);
+            return fetch(url, { method: 'GET', cache: 'no-store', signal: ctrl.signal })
+              .then(function (resp) { clearTimeout(timer); return !!(resp && resp.ok); })
+              .catch(function () { clearTimeout(timer); return false; });
+          } catch (e) {
+            return Promise.resolve(false);
+          }
+        }
+
+        function checkEndpoints(cloudUrl, loopback, lan) {
+          var cloudProbe = cloudUrl
+            ? probe(cloudUrl + '/api/status').then(function (ok) { return ok ? 'online' : null; })
+            : Promise.resolve(null);
+          return cloudProbe.then(function (state) {
+            if (state) return state;
+            return probe(loopback + '/api/status').then(function (ok) {
+              if (ok) return 'local';
+              if (!lan) return 'offline';
+              return probe(lan + '/api/status').then(function (ok2) { return ok2 ? 'local' : 'offline'; });
+            });
+          });
+        }
+
+        function detect() {
+          try {
+            if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+              setState('offline');
+              return;
+            }
+            fetch('./config.json', { cache: 'no-store' })
+              .then(function (resp) { return resp.ok ? resp.json() : null; })
+              .catch(function () { return null; })
+              .then(function (cfg) {
+                var cloudUrl = '';
+                var loopback = 'http://127.0.0.1:8777';
+                var lan = '';
+                try {
+                  if (cfg) {
+                    if (cfg.cloud_backend && cfg.cloud_backend.url) {
+                      cloudUrl = String(cfg.cloud_backend.url).replace(/\/+$/, '');
+                    }
+                    if (cfg.local_agent) {
+                      if (cfg.local_agent.http_loopback) {
+                        loopback = String(cfg.local_agent.http_loopback).replace(/\/+$/, '');
+                      }
+                      if (cfg.local_agent.http_lan) {
+                        lan = String(cfg.local_agent.http_lan).replace(/\/+$/, '');
+                      }
+                    }
+                  }
+                } catch (e) { /* fall through with defaults */ }
+                return checkEndpoints(cloudUrl, loopback, lan);
+              })
+              .then(function (state) { setState(state || 'offline'); })
+              .catch(function () { setState('offline'); });
+          } catch (e) {
+            setState('offline');
+          }
+        }
+
+        try {
+          detect();
+          setInterval(detect, CHECK_MS);
+          window.addEventListener('online', detect);
+          window.addEventListener('offline', detect);
+        } catch (e) { /* never throw */ }
+      })();
+    </script>
   </body>
 </html>
