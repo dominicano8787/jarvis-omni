@@ -6,6 +6,7 @@
 *.key
 *.pem
 *.keystore
+*.jks
 
 # Python & Virtual Environments
 __pycache__/
