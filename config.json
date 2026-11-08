@@ -1,0 +1,23 @@
+{
+  "cloud_backend": {
+    "note": "No cloud backend or serverless proxy exists yet. Set url when a Cloudflare Worker, Vercel or Render proxy is deployed; clients must skip this entry while url is empty. Never put API keys in this file.",
+    "status": "not_configured",
+    "url": ""
+  },
+  "local_agent": {
+    "http_lan": "http://10.0.0.25:8777",
+    "http_loopback": "http://127.0.0.1:8777",
+    "ws_lan": "ws://10.0.0.25:8777/ws",
+    "ws_loopback": "ws://127.0.0.1:8777/ws"
+  },
+  "offline": {
+    "mode": "local_fallback",
+    "note": "When the internet is down, the app shell runs from the local / service-worker cache and only the local agent is used."
+  },
+  "order": [
+    "cloud_backend",
+    "local_agent",
+    "offline"
+  ],
+  "version": 1
+}
