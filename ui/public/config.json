@@ -1,0 +1,66 @@
+{
+  "version": "4.3.0",
+  "appName": "J.A.R.V.I.S. Omni-System",
+  "principal": "Jonathan",
+  "addressAs": "Sir",
+  "priorityOrder": ["cloudBackend", "localAgent", "offlineMode"],
+  "cloudBackend": {
+    "tier": 1,
+    "enabled": true,
+    "githubOwner": "dominicano8787",
+    "githubRepo": "jarvis-omni",
+    "pagesOrigin": "https://dominicano8787.github.io",
+    "pagesUrl": "https://dominicano8787.github.io/jarvis-omni/",
+    "repoUrl": "https://github.com/dominicano8787/jarvis-omni",
+    "apiRepoUrl": "https://api.github.com/repos/dominicano8787/jarvis-omni",
+    "releaseApkUrl": "https://github.com/dominicano8787/jarvis-omni/releases/latest/download/JARVIS-Android-v4.3.0.apk",
+    "releaseExeUrl": "https://github.com/dominicano8787/jarvis-omni/releases/latest/download/JARVIS-Setup-v4.3.0-x64.exe",
+    "cloudProxyUrl": "",
+    "modelsEndpoint": "https://models.github.ai/inference/chat/completions",
+    "fallbackLlmEndpoint": "https://text.pollinations.ai/openai",
+    "fallbackImageEndpoint": "https://image.pollinations.ai/prompt",
+    "endpoints": {
+      "health": "/api/health",
+      "chat": "/api/chat",
+      "tts": "/api/tts/speak",
+      "calendar": "/api/calendar/events",
+      "calendarCreate": "/api/calendar/create",
+      "email": "/api/email/messages",
+      "emailSend": "/api/email/send"
+    }
+  },
+  "localAgent": {
+    "tier": 2,
+    "enabled": true,
+    "port": 8777,
+    "tunnelUrl": "",
+    "localHttpUrl": "http://127.0.0.1:8777",
+    "authHeader": "X-Jarvis-Token",
+    "bindLanByDefault": false,
+    "endpoints": {
+      "health": "/api/health",
+      "pcControl": "/api/pc/control",
+      "wsAgent": "/ws/agent"
+    }
+  },
+  "offlineMode": {
+    "tier": 3,
+    "enabled": true,
+    "serviceWorkerPath": "./sw.js",
+    "cacheName": "jarvis-omni-cache-v4.3.0",
+    "androidLocalAssetOrigin": "https://appassets.androidplatform.net/index.html",
+    "preferredVoiceLang": "en-GB",
+    "queueStorageKey": "jarvis_offline_command_queue_v4",
+    "autoRetryIntervalMs": 8000
+  },
+  "cors": {
+    "allowedOrigins": [
+      "https://dominicano8787.github.io",
+      "https://appassets.androidplatform.net",
+      "http://localhost:8777",
+      "http://127.0.0.1:8777",
+      "http://localhost:5173",
+      "http://127.0.0.1:5173"
+    ]
+  }
+}

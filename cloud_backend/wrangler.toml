@@ -1,0 +1,10 @@
+name = "jarvis-omni-cloud"
+main = "cloudflare_worker.js"
+compatibility_date = "2026-10-01"
+
+# Optional KV namespace for persistent PC <-> Z Fold 7 Never-Forget memory sync:
+# Run: npx wrangler kv namespace create JARVIS_KV
+# Then uncomment and paste the generated id below:
+# [[kv_namespaces]]
+# binding = "JARVIS_KV"
+# id = "YOUR_KV_NAMESPACE_ID"

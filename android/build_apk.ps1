@@ -98,8 +98,17 @@ $ALIGNED_APK = Join-Path $BUILD_DIR "aligned.apk"
 & $ZIPALIGN -f -p 4 $UNALIGNED_APK $ALIGNED_APK
 if ($LASTEXITCODE -ne 0) { throw "zipalign failed" }
 
-# 7. Sign APK with Stark Industries Release Key (v1 + v2 + v3 schemes)
+# 7. Sign APK with Release Key (v1 + v2 + v3 schemes)
 Write-Host "[7/7] Signing APK with apksigner (v1+v2+v3) and Verifying..." -ForegroundColor Yellow
+$KEYSTORE_PASS_FILE = Join-Path $KEYSTORE_DIR "keystore.key"
+$KEYSTORE_PASS = $env:JARVIS_KEYSTORE_PASSWORD
+if (-not $KEYSTORE_PASS -and (Test-Path $KEYSTORE_PASS_FILE)) {
+    $KEYSTORE_PASS = (Get-Content -Raw $KEYSTORE_PASS_FILE).Trim()
+}
+if (-not $KEYSTORE_PASS) {
+    throw "Keystore password not set. Set `$env:JARVIS_KEYSTORE_PASSWORD or create gitignored $KEYSTORE_PASS_FILE."
+}
+
 if (-not (Test-Path $KEYSTORE_FILE)) {
     & $KEYTOOL -genkeypair `
         -v `
@@ -108,16 +117,16 @@ if (-not (Test-Path $KEYSTORE_FILE)) {
         -keyalg RSA `
         -keysize 2048 `
         -validity 10000 `
-        -storepass "starkjarvis4" `
-        -keypass "starkjarvis4" `
+        -storepass $KEYSTORE_PASS `
+        -keypass $KEYSTORE_PASS `
         -dname "CN=J.A.R.V.I.S. Z Fold 7, OU=Stark Industries, O=Stark Industries, L=Malibu, ST=CA, C=US"
 }
 
 & $APKSIGNER sign `
     --ks $KEYSTORE_FILE `
     --ks-key-alias jarvis_fold7 `
-    --ks-pass pass:starkjarvis4 `
-    --key-pass pass:starkjarvis4 `
+    --ks-pass "pass:$KEYSTORE_PASS" `
+    --key-pass "pass:$KEYSTORE_PASS" `
     --v1-signing-enabled true `
     --v2-signing-enabled true `
     --v3-signing-enabled true `

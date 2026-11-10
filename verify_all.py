@@ -728,7 +728,7 @@ def run_verification():
 
     # 36. Native Standalone Executables Verification
     jarvis_exe = ROOT / "JARVIS.exe"
-    setup_exe = ROOT / "JARVIS-Setup-v3.0-x64.exe"
+    setup_exe = ROOT / "JARVIS-Setup-v4.0-x64.exe"
     assert jarvis_exe.is_file() and setup_exe.is_file()
     p1 = subprocess.run([str(jarvis_exe), "--verify"], capture_output=True, text=True, timeout=15)
     assert p1.returncode == 0 and "JARVIS_STANDALONE_EXE_VERIFY: OK" in p1.stdout
