@@ -1,3 +1,4 @@
+import { agentMediaUrl } from '../utils/jarvisConfig';
 /**
  * Dedicated Command Center panels for the Phase 1-3 engines:
  *  - SecPlusDojoPanel   -> /api/secplus/*            (server/security_plus_rag.py)
@@ -483,7 +484,7 @@ export const FinancePanel: React.FC = () => {
               SMA {fmt(analysis.indicators?.sma_period)} • Bollinger [{fmt(analysis.indicators?.bollinger_lower)} – {fmt(analysis.indicators?.bollinger_upper)}] •
               Vol ~{analysis.indicators?.volatility_annual_pct}%/yr • Max drawdown {analysis.indicators?.max_drawdown_hist_pct}%
             </div>
-            {analysis.chart_url && <img src={analysis.chart_url} alt={`${analysis.symbol} chart`} style={{ width: '100%', borderRadius: '6px', border: '1px solid rgba(255,184,0,0.3)' }} />}
+            {analysis.chart_url && <img src={agentMediaUrl(analysis.chart_url)} alt={`${analysis.symbol} chart`} style={{ width: '100%', borderRadius: '6px', border: '1px solid rgba(255,184,0,0.3)' }} />}
             <div style={{ marginTop: '10px', padding: '10px', borderRadius: '6px', background: 'rgba(244,63,94,0.12)', border: '1px solid rgba(244,63,94,0.5)', fontSize: '11px', color: '#fecdd3' }}>
               {analysis.risk_disclosure}
             </div>

@@ -1,3 +1,4 @@
+import { agentMediaUrl } from '../utils/jarvisConfig';
 import React, { useState, useEffect } from 'react';
 import {
   Shield,
@@ -1397,7 +1398,7 @@ export const CommandCenterModal: React.FC<CommandCenterModalProps> = ({
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <a
-                        href={activeFacelessVideo.video_url}
+                        href={agentMediaUrl(activeFacelessVideo.video_url)}
                         download
                         className="font-mono"
                         style={{
@@ -1439,7 +1440,7 @@ export const CommandCenterModal: React.FC<CommandCenterModalProps> = ({
 
                   <video
                     key={activeFacelessVideo.video_url}
-                    src={activeFacelessVideo.video_url}
+                    src={agentMediaUrl(activeFacelessVideo.video_url)}
                     controls
                     autoPlay
                     style={{
@@ -1469,7 +1470,7 @@ export const CommandCenterModal: React.FC<CommandCenterModalProps> = ({
                         }}
                       >
                         <img
-                          src={sc.image_url}
+                          src={agentMediaUrl(sc.image_url)}
                           alt={`Scene ${sc.scene_number}`}
                           style={{ width: '100%', height: '140px', objectFit: 'cover', borderRadius: '4px' }}
                         />
@@ -1479,7 +1480,7 @@ export const CommandCenterModal: React.FC<CommandCenterModalProps> = ({
                         <div className="font-mono" style={{ fontSize: '11px', color: '#e2f1ff' }}>
                           "{sc.narration}"
                         </div>
-                        {sc.audio_url && <audio src={sc.audio_url} controls style={{ width: '100%', height: '28px' }} />}
+                        {sc.audio_url && <audio src={agentMediaUrl(sc.audio_url)} controls style={{ width: '100%', height: '28px' }} />}
                       </div>
                     ))}
                   </div>
@@ -2278,7 +2279,7 @@ export const CommandCenterModal: React.FC<CommandCenterModalProps> = ({
 
               {fold7State?.apk_ready && (
                 <a
-                  href="/api/apk/download"
+                  href={agentMediaUrl("/api/apk/download")}
                   download
                   className="font-tech"
                   style={{

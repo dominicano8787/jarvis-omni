@@ -138,6 +138,46 @@ class JarvisConnectionManager {
     return t ? { [JARVIS_CONFIG.localAgent.authHeader]: t } : {};
   }
 
+  /**
+   * Returns `init` with the agent token attached. Only ever pass the result to
+   * the agent itself (same origin, tunnel, cloud proxy, LAN candidate) — never
+   * to a third-party host. Works whether the caller's headers are a plain
+   * object, an array of pairs, or a Headers instance.
+   */
+  public withAuth(init?: RequestInit): RequestInit {
+    const t = this.getAgentToken();
+    if (!t) return init || {};
+    const headers = new Headers(init?.headers);
+    headers.set(JARVIS_CONFIG.localAgent.authHeader, t);
+    return { ...init, headers };
+  }
+
+  // ---- media URLs -----------------------------------------------------------
+  /** Base of whichever agent last answered an /api call ('' = same origin). */
+  private lastAgentBase = '';
+
+  /** Called by the fetch interceptor each time an agent base answers. */
+  public noteAgentBase(base: string): void {
+    this.lastAgentBase = trimUrl(base);
+  }
+
+  /**
+   * The agent returns media as relative `/api/...` paths. In an <img>, <video>
+   * or link those resolve against the page's own host, which on GitHub Pages or
+   * inside the APK is not the agent. Point them at the agent that answered, and
+   * carry the token in the query because media elements cannot send headers.
+   * Same-origin and non-agent URLs (data:, blob:, CDN links) pass through.
+   */
+  public mediaUrl(url?: string | null): string {
+    if (!url) return '';
+    if (!url.startsWith('/api/')) return url;
+    const base = this.lastAgentBase || this.snapshot.localAgentBase;
+    if (!base) return url;
+    const t = this.getAgentToken();
+    if (!t) return `${base}${url}`;
+    return `${base}${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(t)}`;
+  }
+
   public setSimulateOffline(offline: boolean): void {
     this.simulateOffline = offline;
     this.probe();
@@ -384,3 +424,8 @@ class JarvisConnectionManager {
 }
 
 export const jarvisConnection = new JarvisConnectionManager();
+
+/** Use for every `src` / `href` that may hold a path returned by the agent. */
+export function agentMediaUrl(url?: string | null): string {
+  return jarvisConnection.mediaUrl(url);
+}

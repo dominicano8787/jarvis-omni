@@ -27,6 +27,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import config, experts, tools
+from .access_gate import AccessGate, cors_origins
 from .brain import Engine, OllamaEngine
 from .cognitive_core import JarvisCognitiveCore
 from .memory import MemoryTool, Store
@@ -49,9 +50,12 @@ APPROVAL_TIMEOUT = 300  # seconds a gated tool call waits for a decision
 
 app = FastAPI(title="J.A.R.V.I.S. v4.0 Standalone & Z Fold 7 Omni-System", docs_url="/docs", redoc_url="/redoc")
 
+# Order matters: the last middleware added is the outermost. CORS must wrap the
+# gate so preflights are answered and 401s still carry CORS headers.
+app.add_middleware(AccessGate)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins(),
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -97,6 +101,28 @@ async def api_status():
         "research_passes": config.RESEARCH_MAX_PASSES,
         "totals": store.totals(),
         "voice": "en-GB-RyanNeural (British Male J.A.R.V.I.S.)",
+    }
+
+
+def _is_agent_authorized(headers, query_token: str | None = None) -> bool:
+    expected = os.environ.get("JARVIS_AGENT_TOKEN", "").strip()
+    if not expected:
+        return True
+    auth = (headers.get("authorization") or "").strip()
+    bearer = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+    provided = (headers.get("x-jarvis-token") or bearer or query_token or "").strip()
+    return provided == expected
+
+
+@app.get("/api/health")
+async def api_health():
+    return {
+        "ok": True,
+        "status": "HEALTHY",
+        "service": "J.A.R.V.I.S. Local PC Agent",
+        "version": "4.3.0",
+        "token_required": bool(os.environ.get("JARVIS_AGENT_TOKEN", "").strip()),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -1125,6 +1151,49 @@ async def api_system_control(request: Request):
     return await execute_desktop_control(action, target)
 
 
+@app.post("/api/pc/control")
+async def api_pc_control(request: Request):
+    if not _is_agent_authorized(request.headers, request.query_params.get("token")):
+        return JSONResponse({"ok": False, "error": "Unauthorized: invalid X-Jarvis-Token"}, status_code=401)
+    data = await request.json()
+    action = data.get("action", "")
+    params = data.get("params") or {}
+    target = data.get("target") or params.get("target")
+    return await execute_desktop_control(action, target)
+
+
+@app.websocket("/ws/agent")
+async def ws_agent_endpoint(ws: WebSocket):
+    if not _is_agent_authorized(ws.headers, ws.query_params.get("token")):
+        await ws.close(code=1008)
+        return
+    await ws.accept()
+    await ws.send_json({
+        "ok": True,
+        "type": "agent_hello",
+        "service": "J.A.R.V.I.S. Local PC Agent",
+        "version": "4.3.0",
+    })
+    try:
+        while True:
+            raw = await ws.receive_text()
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                await ws.send_json({"ok": False, "error": "malformed json"})
+                continue
+            if msg.get("type") == "ping":
+                await ws.send_json({"ok": True, "type": "pong"})
+                continue
+            action = msg.get("action", "")
+            params = msg.get("params") or {}
+            target = msg.get("target") or params.get("target")
+            res = await execute_desktop_control(action, target)
+            await ws.send_json({"ok": True, "type": "pc_control_result", "result": res})
+    except WebSocketDisconnect:
+        pass
+
+
 # ==============================================================================
 # Samsung Galaxy Z Fold 7 (SM-F966U) Native APK Bridge & Telemetry Mesh (v4.0)
 # ==============================================================================
@@ -1654,7 +1723,9 @@ async def api_diagnostics_run():
 
 def run_server():
     import uvicorn
-    uvicorn.run("server.main:app", host="0.0.0.0", port=8777, reload=False)
+    # Loopback by default. Set JARVIS_HOST=0.0.0.0 (and JARVIS_AGENT_TOKEN) to
+    # reach the agent from the phone over the LAN.
+    uvicorn.run("server.main:app", host=config.HOST, port=config.PORT, reload=False)
 
 
 if __name__ == "__main__":

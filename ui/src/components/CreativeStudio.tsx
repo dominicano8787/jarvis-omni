@@ -1,3 +1,4 @@
+import { agentMediaUrl } from '../utils/jarvisConfig';
 import React, { useState, useEffect } from 'react';
 import {
   Wand2,
@@ -428,7 +429,7 @@ export const CreativeStudio: React.FC<CreativeStudioProps> = ({ isOpen, onClose,
           >
             {currentAsset ? (
               <img
-                src={currentAsset.media_url}
+                src={agentMediaUrl(currentAsset.media_url)}
                 alt={currentAsset.prompt}
                 style={{
                   maxWidth: '100%',
@@ -644,7 +645,7 @@ export const CreativeStudio: React.FC<CreativeStudioProps> = ({ isOpen, onClose,
                     }}
                   >
                     <img
-                      src={item.media_url}
+                      src={agentMediaUrl(item.media_url)}
                       alt={item.prompt}
                       style={{ width: '42px', height: '42px', objectFit: 'cover', borderRadius: '3px' }}
                     />

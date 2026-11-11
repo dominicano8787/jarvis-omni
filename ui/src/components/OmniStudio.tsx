@@ -1,3 +1,4 @@
+import { agentMediaUrl } from '../utils/jarvisConfig';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Sparkles,
@@ -1086,7 +1087,7 @@ export const OmniStudio: React.FC<OmniStudioProps> = ({
                   }}
                 >
                   <img
-                    src={item.media_url}
+                    src={agentMediaUrl(item.media_url)}
                     alt={item.prompt}
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
@@ -1241,7 +1242,7 @@ export const OmniStudio: React.FC<OmniStudioProps> = ({
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               {currentDownloadUrl && (
                 <a
-                  href={currentDownloadUrl}
+                  href={agentMediaUrl(currentDownloadUrl)}
                   download
                   className="font-mono"
                   style={{
@@ -1283,7 +1284,7 @@ export const OmniStudio: React.FC<OmniStudioProps> = ({
               <video
                 ref={videoPlayerRef}
                 key={renderedVideoUrl}
-                src={renderedVideoUrl}
+                src={agentMediaUrl(renderedVideoUrl)}
                 controls
                 autoPlay
                 loop
@@ -1292,7 +1293,7 @@ export const OmniStudio: React.FC<OmniStudioProps> = ({
               />
             ) : activeKeyframeUrl ? (
               <img
-                src={activeKeyframeUrl}
+                src={agentMediaUrl(activeKeyframeUrl)}
                 alt="Active Frame"
                 style={{
                   width: '100%',
@@ -1636,7 +1637,7 @@ export const OmniStudio: React.FC<OmniStudioProps> = ({
                         + TIMELINE
                       </button>
                       <a
-                        href={vid.video_url}
+                        href={agentMediaUrl(vid.video_url)}
                         download
                         className="font-mono"
                         style={{

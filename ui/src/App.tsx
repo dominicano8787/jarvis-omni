@@ -1,3 +1,4 @@
+import { agentMediaUrl } from './utils/jarvisConfig';
 import React, { useState, useEffect, useRef } from 'react';
 import { Core3D } from './components/Core3D';
 import { GlassPanel } from './components/GlassPanel';
@@ -1285,7 +1286,7 @@ export const App: React.FC = () => {
                   {activeMedia.type === 'video' ? (
                     <video
                       key={activeMedia.url}
-                      src={activeMedia.url}
+                      src={agentMediaUrl(activeMedia.url)}
                       controls
                       autoPlay
                       loop
@@ -1300,7 +1301,7 @@ export const App: React.FC = () => {
                     />
                   ) : activeMedia.type === 'image' ? (
                     <img
-                      src={activeMedia.url}
+                      src={agentMediaUrl(activeMedia.url)}
                       alt="Generated or Uploaded Asset"
                       style={{
                         width: '100%',
@@ -1311,12 +1312,12 @@ export const App: React.FC = () => {
                       }}
                     />
                   ) : (
-                    <audio src={activeMedia.url} controls style={{ width: '100%' }} />
+                    <audio src={agentMediaUrl(activeMedia.url)} controls style={{ width: '100%' }} />
                   )}
 
                   <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
                     <a
-                      href={activeMedia.url}
+                      href={agentMediaUrl(activeMedia.url)}
                       download
                       className="font-mono"
                       style={{

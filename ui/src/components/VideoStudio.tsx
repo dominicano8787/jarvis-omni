@@ -1,3 +1,4 @@
+import { agentMediaUrl } from '../utils/jarvisConfig';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Film,
@@ -1196,9 +1197,9 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
                       {/* Image / Video Preview */}
                       <div style={{ height: '160px', background: '#000', position: 'relative', overflow: 'hidden' }}>
                         {job.result_url?.endsWith('.mp4') ? (
-                          <video src={job.result_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} controls />
+                          <video src={agentMediaUrl(job.result_url)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} controls />
                         ) : job.result_url || job.min_result_url ? (
-                          <img src={job.result_url || job.min_result_url} alt={job.display_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          <img src={agentMediaUrl(job.result_url || job.min_result_url)} alt={job.display_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         ) : (
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b' }}>
                             <Film size={32} />
@@ -1392,7 +1393,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({
                   {renderedUrl && (
                     <div style={{ marginTop: '10px', padding: '10px', background: 'rgba(0,255,136,0.1)', border: '1px solid #00ff88', borderRadius: '6px' }}>
                       <div style={{ fontSize: '12px', color: '#00ff88', fontWeight: 600 }}>RENDER COMPLETE</div>
-                      <video src={renderedUrl} controls style={{ width: '100%', borderRadius: '4px', marginTop: '6px' }} />
+                      <video src={agentMediaUrl(renderedUrl)} controls style={{ width: '100%', borderRadius: '4px', marginTop: '6px' }} />
                     </div>
                   )}
                 </div>

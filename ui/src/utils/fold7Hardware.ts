@@ -288,9 +288,12 @@ class Fold7HardwareManager {
       // 1. Direct relative fetch ONLY when served from local PC agent (localhost:8777 / Vite dev server)
       if (isLocalWebHost) {
         try {
-          const directRes = await origFetch(input, init);
+          // Same origin as the page, so the token only goes back to the agent
+          // that served it. Needed when the HUD is opened from another device.
+          const directRes = await origFetch(input, jarvisConnection.withAuth(init));
           if (directRes.ok) {
             this.workstationOnline = true;
+            jarvisConnection.noteAgentBase('');
             return directRes;
           }
         } catch {}
@@ -316,19 +319,15 @@ class Fold7HardwareManager {
         try {
           const ctrl = new AbortController();
           const timer = setTimeout(() => ctrl.abort(), 8000);
-          const mergedHeaders = {
-            ...(init?.headers as Record<string, string> | undefined),
-            ...jarvisConnection.authHeaders(),
-          };
           const tunnelRes = await origFetch(`${tunnelUrl}${urlStr}`, {
-            ...init,
-            headers: mergedHeaders,
+            ...jarvisConnection.withAuth(init),
             signal: init?.signal || ctrl.signal,
           });
           clearTimeout(timer);
           if (tunnelRes.ok) {
             this.workstationUrl = tunnelUrl;
             this.workstationOnline = true;
+            jarvisConnection.noteAgentBase(tunnelUrl);
             return tunnelRes;
           }
         } catch {}
@@ -340,13 +339,8 @@ class Fold7HardwareManager {
           const ctrl = new AbortController();
           const timeoutMs = urlStr.startsWith('/api/chat') ? 25000 : 10000;
           const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-          const mergedHeaders = {
-            ...(init?.headers as Record<string, string> | undefined),
-            ...jarvisConnection.authHeaders(),
-          };
           const cloudRes = await origFetch(`${cloudProxy}${urlStr}`, {
-            ...init,
-            headers: mergedHeaders,
+            ...jarvisConnection.withAuth(init),
             signal: init?.signal || ctrl.signal,
           });
           clearTimeout(timer);
@@ -368,12 +362,13 @@ class Fold7HardwareManager {
             const ctrl = new AbortController();
             const timer = setTimeout(() => ctrl.abort(), 900);
             const bridgedRes = await origFetch(`${base}${urlStr}`, {
-              ...init,
+              ...jarvisConnection.withAuth(init),
               signal: init?.signal || ctrl.signal,
             });
             clearTimeout(timer);
             if (bridgedRes.ok) {
               this.workstationOnline = true;
+              jarvisConnection.noteAgentBase(base);
               return bridgedRes;
             }
           } catch {}
