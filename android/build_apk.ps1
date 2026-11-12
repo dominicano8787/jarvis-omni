@@ -88,6 +88,18 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [System.IO.Compression.ZipFile]::Open($UNALIGNED_APK, [System.IO.Compression.ZipArchiveMode]::Update)
 try {
     [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $CLASSES_DEX, "classes.dex", [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
+
+    # aapt2 on Windows stores asset paths with backslashes ("assets/www\index.html").
+    # Android looks entries up with forward slashes, so getAssets().open("www/index.html")
+    # fails and the offline fallback has nothing to serve. Rewrite the names.
+    $bad = @($zip.Entries | Where-Object { $_.FullName.Contains('\') })
+    foreach ($entry in $bad) {
+        $fixed = $zip.CreateEntry($entry.FullName.Replace('\', '/'), [System.IO.Compression.CompressionLevel]::Optimal)
+        $src = $entry.Open(); $dst = $fixed.Open()
+        try { $src.CopyTo($dst) } finally { $dst.Dispose(); $src.Dispose() }
+        $entry.Delete()
+    }
+    if ($bad.Count) { Write-Host ("      normalised {0} asset path(s) to forward slashes" -f $bad.Count) }
 } finally {
     $zip.Dispose()
 }
