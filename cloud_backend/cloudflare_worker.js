@@ -63,18 +63,30 @@ async function callCloudLlm(prompt, history, env, preferredEngine) {
   }
   messages.push({ role: 'user', content: prompt });
 
+  // Status codes and error types only: provider messages are not passed on.
+  const failures = [];
+  const noteFailure = async (provider, res) => {
+    let kind = '';
+    try {
+      const body = await res.json();
+      kind = body?.error?.type || body?.error?.status || '';
+    } catch {}
+    failures.push(`${provider} ${res.status}${kind ? ` ${kind}` : ''}`);
+  };
+
   // 1. Gemini API (Fastest & lowest latency if GEMINI_API_KEY is configured)
   if (env.GEMINI_API_KEY && preferredEngine !== 'claude-code' && preferredEngine !== 'chatgpt') {
     try {
-      const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`;
+      // The -latest alias keeps working when Google retires a numbered model.
+      const model = env.GEMINI_MODEL || 'gemini-flash-latest';
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
       const contents = messages.map((m) => ({
         role: m.role === 'assistant' ? 'model' : 'user',
         parts: [{ text: m.content }],
       }));
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: DEFAULT_SYSTEM_PROMPT }] },
           contents,
@@ -83,10 +95,16 @@ async function callCloudLlm(prompt, history, env, preferredEngine) {
       });
       if (res.ok) {
         const data = await res.json();
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        const parts = data?.candidates?.[0]?.content?.parts || [];
+        const text = parts.filter((p) => p.text && !p.thought).map((p) => p.text).join('');
         if (text) return { text: text.trim(), engine: `Cloud Gemini (${model})` };
+        failures.push('gemini returned no text');
+      } else {
+        await noteFailure('gemini', res);
       }
-    } catch {}
+    } catch {
+      failures.push('gemini unreachable');
+    }
   }
 
   // 2. Anthropic Claude API (if ANTHROPIC_API_KEY is configured)
@@ -109,10 +127,16 @@ async function callCloudLlm(prompt, history, env, preferredEngine) {
       });
       if (res.ok) {
         const data = await res.json();
-        const text = data?.content?.[0]?.text;
+        const blocks = data?.content || [];
+        const text = blocks.filter((b) => b.type === 'text').map((b) => b.text).join('');
         if (text) return { text: text.trim(), engine: `Cloud Claude (${model})` };
+        failures.push(`anthropic returned no text (${data?.stop_reason || 'unknown'})`);
+      } else {
+        await noteFailure('anthropic', res);
       }
-    } catch {}
+    } catch {
+      failures.push('anthropic unreachable');
+    }
   }
 
   // 3. OpenAI API (if OPENAI_API_KEY is configured)
@@ -161,7 +185,7 @@ async function callCloudLlm(prompt, history, env, preferredEngine) {
   } catch {}
 
   return {
-    text: `Cloud Worker is active, Sir, but all upstream LLM providers timed out or lacked API keys in Worker Secrets. Please set GEMINI_API_KEY or ANTHROPIC_API_KEY using \`npx wrangler secret put\`.`,
+    text: `Cloud Worker is active, Sir, but no AI provider answered. ${failures.length ? `Details: ${failures.join('; ')}.` : 'No provider keys are set in Worker Secrets.'}`,
     engine: 'Jarvis Cloud Core',
   };
 }
