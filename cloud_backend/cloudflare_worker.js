@@ -163,27 +163,7 @@ async function callCloudLlm(prompt, history, env, preferredEngine) {
     } catch {}
   }
 
-  // 4. Free Pollinations OpenAI-compatible fallback
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 14000);
-    const res = await fetch('https://text.pollinations.ai/openai', {
-      method: 'POST',
-      signal: ctrl.signal,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'openai',
-        messages: [{ role: 'system', content: DEFAULT_SYSTEM_PROMPT }, ...messages],
-      }),
-    });
-    clearTimeout(timer);
-    if (res.ok) {
-      const data = await res.json();
-      const text = data?.choices?.[0]?.message?.content;
-      if (text) return { text: text.trim(), engine: 'Cloud Fallback LLM' };
-    }
-  } catch {}
-
+  // No anonymous free fallback: private conversations go only to providers with our own keys.
   return {
     text: `Cloud Worker is active, Sir, but no AI provider answered. ${failures.length ? `Details: ${failures.join('; ')}.` : 'No provider keys are set in Worker Secrets.'}`,
     engine: 'Jarvis Cloud Core',
