@@ -19,6 +19,14 @@ const CORS_HEADERS = {
 const DEFAULT_SYSTEM_PROMPT =
   "You are J.A.R.V.I.S., Jonathan's British AI Omni-System running 24/7 in the cloud. Be concise, helpful, technically accurate, and address Jonathan as Sir.";
 
+function sameToken(given, expected) {
+  const a = new TextEncoder().encode(String(given));
+  const b = new TextEncoder().encode(String(expected));
+  let difference = a.length ^ b.length;
+  for (let i = 0; i < b.length; i++) difference |= (a[i] ?? 0) ^ b[i];
+  return difference === 0;
+}
+
 function jsonRes(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -84,7 +92,7 @@ async function callCloudLlm(prompt, history, env, preferredEngine) {
   // 2. Anthropic Claude API (if ANTHROPIC_API_KEY is configured)
   if (env.ANTHROPIC_API_KEY) {
     try {
-      const model = env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-latest';
+      const model = env.ANTHROPIC_MODEL || 'claude-opus-5-5';
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -271,14 +279,18 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // Optional token protection if operator sets JARVIS_CLOUD_TOKEN secret
-    if (env.JARVIS_CLOUD_TOKEN && path !== '/api/health') {
+    // Every route but the health check spends a private key or reads private memory, so the
+    // token is mandatory: with no JARVIS_CLOUD_TOKEN secret the worker refuses, it does not open up.
+    if (path !== '/api/health') {
+      if (!env.JARVIS_CLOUD_TOKEN) {
+        return jsonRes({ ok: false, error: 'Cloud access is not configured: JARVIS_CLOUD_TOKEN is not set' }, 503);
+      }
       const provided =
         request.headers.get('X-Jarvis-Token') ||
         (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim() ||
-        url.searchParams.get('token') ||
+        url.searchParams.get('token') ||        // media elements cannot set headers
         '';
-      if (provided !== env.JARVIS_CLOUD_TOKEN) {
+      if (!sameToken(provided, env.JARVIS_CLOUD_TOKEN)) {
         return jsonRes({ ok: false, error: 'Unauthorized cloud access' }, 401);
       }
     }

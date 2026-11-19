@@ -8,6 +8,32 @@
 *.keystore
 *.jks
 
+# Knowledge Galaxy: live keys, spending records and private builds
+knowledge-galaxy/config.json
+knowledge-galaxy/receipts.jsonl
+knowledge-galaxy/builds/
+knowledge-galaxy/workshop-shots/
+# The Galaxy stays private: nothing in it is published
+knowledge-galaxy/
+
+# Private runtime data: browser profile, memory databases, reports
+data/
+reports/
+*.db
+*.db-journal
+*.db-wal
+*.sqlite
+*.sqlite3
+*.log
+
+# Local tooling and experiments that are not part of the site
+.agents/
+.vscode/
+agents/
+web/
+ui/tsconfig.tsbuildinfo
+JARVIS-Windows-Package-*.zip
+
 # Python & Virtual Environments
 __pycache__/
 *.py[cod]

@@ -11,12 +11,12 @@ npx wrangler deploy
 This gives you a permanent HTTPS URL such as `https://jarvis-omni-cloud.<your-subdomain>.workers.dev`.
 
 ## 2. Store Your Private API Keys in Cloudflare Secrets
-Run whichever keys you use (they are encrypted inside Cloudflare, never committed to GitHub):
+`JARVIS_CLOUD_TOKEN` is required: without it every route except `/api/health` answers 503. Add the provider keys you use (they are encrypted inside Cloudflare, never committed to GitHub):
 ```powershell
+npx wrangler secret put JARVIS_CLOUD_TOKEN
 npx wrangler secret put GEMINI_API_KEY
 npx wrangler secret put ANTHROPIC_API_KEY
 npx wrangler secret put ELEVENLABS_API_KEY
-npx wrangler secret put JARVIS_CLOUD_TOKEN
 ```
 
 ## 3. Enable Persistent PC <-> Phone Memory Sync (Optional, Free)
