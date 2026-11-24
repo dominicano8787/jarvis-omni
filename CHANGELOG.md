@@ -1,5 +1,10 @@
 # Changelog — J.A.R.V.I.S. Omni-Workstation
 
+## [Unreleased]
+### Added
+- **REA "reverse-engineer-anything" skill** (`skills/reverse-engineer-anything/`, vendored from `morluto/rea` at `42bbf33`, MIT): the SKILL.md is appended to the Reverse Engineering profile's system prompt, and its reference guides are readable with `read_file`.
+- **`rea_cli` tool** (`server/tools.py`): runs a REA CLI command (installed `rea` or `npx -y rea-agents@latest`) from `data/rea`, confines the target path to the workspace roots, saves full stdout to `data/rea/results/`, and returns a preview. Gated behind operator approval like other code-running tools.
+
 ## [v4.2.0] — 2026-11-07
 ### Added
 - **Phase 0 — Full Codebase Audit & 36-Point Regression Suite**:

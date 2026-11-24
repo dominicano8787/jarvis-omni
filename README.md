@@ -27,6 +27,7 @@
 
 ### 4. 🌐 Core Workstation, Reverse Engineering, Physical AI & Native Builds
 - **Ghidra 12.1.4 SRE Suite (`server/ghidra_engine.py`)**: PE/ELF static binary triage, Shannon entropy scoring, and C decompilation.
+- **REA skill (`skills/reverse-engineer-anything/`)**: The Reverse Engineering profile now carries the [REA](https://github.com/morluto/rea) "reverse-engineer-anything" skill (v63) and its 8 reference guides, and runs REA through the `rea_cli` tool (an installed `rea`, or `npx -y rea-agents@latest`; needs Node.js). Results are saved under `data/rea/results`.
 - **WendyOS & Physical AI Edge Harness (`server/wendy_engine.py`)**: Full `wendylabsinc` 10-repository integration + NVIDIA Jetson Orin Nano A/B OTA updates.
 - **Autonomous ReAct Agentic Core (`server/agentic_engine.py`)**: 16-tool multi-step ReAct agent loop + 24/7 GitHub Cloud Server (`https://dominicano8787.github.io/jarvis-omni/`).
 - **Native Executables**:

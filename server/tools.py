@@ -14,9 +14,12 @@ Design notes:
 from __future__ import annotations
 
 import asyncio
+import datetime
 import hashlib
+import json
 import math
 import re
+import shutil
 import struct
 from collections import Counter
 from pathlib import Path
@@ -27,6 +30,9 @@ from . import config
 MAX_READ_BYTES = 400_000
 SHELL_TIMEOUT = 180
 GHIDRA_TIMEOUT = 1800
+REA_TIMEOUT = 1800
+REA_PREVIEW_CHARS = 30_000
+REA_COMMAND_RE = re.compile(r"^[a-z][a-z0-9-]{1,63}$")
 
 
 class ToolDenied(Exception):
@@ -236,6 +242,50 @@ DEFINITIONS: list[dict] = [
         },
         "danger": "medium",
     },
+    {
+        "name": "rea_cli",
+        "description": (
+            "Run a REA (Reverse Engineer Anything) CLI command, e.g. "
+            "analyze-javascript-application, inspect-artifact, "
+            "audit-release-exposure, inspect-pe-imports, inspect-elf-notes, "
+            "inspect-analysis-view. Follow the reverse-engineer-anything skill "
+            "for which command fits the target. Uses an installed `rea` if one "
+            "is on PATH, otherwise `npx -y rea-agents@latest`. The full stdout "
+            "is saved to a file under data/rea/results and only a preview is "
+            "returned; read the saved file, or pass it to inspect-analysis-view, "
+            "for the rest. Run `rea <command> --help` (command 'help' is not a "
+            "command; pass extra_args ['--help']) when unsure of a command's flags."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "REA subcommand in kebab-case, e.g. analyze-javascript-application.",
+                },
+                "target": {
+                    "type": "string",
+                    "description": "Optional absolute path to the file or folder to analyze. Passed first after the command.",
+                },
+                "extra_args": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Further CLI arguments, e.g. ['--provider', 'ghidra'] or ['--help'].",
+                },
+                "json_output": {
+                    "type": "boolean",
+                    "description": "Append --json (default true).",
+                },
+                "stdin_json": {
+                    "type": "object",
+                    "description": "Optional JSON request sent on stdin; '-' is appended to the arguments.",
+                },
+                "why": {"type": "string"},
+            },
+            "required": ["command", "why"],
+        },
+        "danger": "medium",
+    },
 ]
 
 BY_NAME = {d["name"]: d for d in DEFINITIONS}
@@ -412,3 +462,61 @@ class Executor:
             proc.kill()
             return f"Error: Ghidra exceeded {GHIDRA_TIMEOUT}s and was killed."
         return self._format_proc(proc.returncode, out, err, cap=40_000)
+
+    async def _t_rea_cli(self, p: dict) -> str:
+        command = str(p.get("command", "")).strip()
+        if not REA_COMMAND_RE.match(command):
+            raise ValueError(f"not a REA command name: {command!r}")
+        rea = shutil.which("rea")
+        npx = shutil.which("npx")
+        if rea:
+            base = [rea]
+        elif npx:
+            base = [npx, "-y", "rea-agents@latest"]
+        else:
+            return "Error: neither `rea` nor `npx` is on PATH. Install Node.js, or run `npm install --global rea-agents`."
+        args = [command]
+        if p.get("target"):
+            args.append(str(_confine(p["target"], must_exist=True)))
+        extra = p.get("extra_args") or []
+        if not isinstance(extra, list) or not all(isinstance(a, str) for a in extra):
+            raise ValueError("extra_args must be a list of strings")
+        args.extend(extra)
+        if p.get("json_output", True) and "--json" not in args and "--help" not in args:
+            args.append("--json")
+        stdin_bytes = None
+        if p.get("stdin_json") is not None:
+            stdin_bytes = json.dumps(p["stdin_json"]).encode("utf-8")
+            args.append("-")
+        # REA asks to be run from a trusted directory outside the target.
+        workdir = config.DATA_DIR / "rea"
+        results = workdir / "results"
+        results.mkdir(parents=True, exist_ok=True)
+        proc = await asyncio.create_subprocess_exec(
+            *base, *args,
+            cwd=str(workdir),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            stdin=asyncio.subprocess.PIPE if stdin_bytes is not None else asyncio.subprocess.DEVNULL,
+        )
+        try:
+            out, err = await asyncio.wait_for(proc.communicate(stdin_bytes), timeout=REA_TIMEOUT)
+        except asyncio.TimeoutError:
+            proc.kill()
+            return f"Error: REA exceeded {REA_TIMEOUT}s and was killed."
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        saved = results / f"{stamp}-{command}.json"
+        saved.write_bytes(out)
+        text = out.decode("utf-8", "replace")
+        preview = text[:REA_PREVIEW_CHARS]
+        report = [
+            f"exit code: {proc.returncode}",
+            f"command: {' '.join(['rea', *args])}",
+            f"full stdout ({len(out)} bytes) saved to: {saved}",
+        ]
+        if len(text) > REA_PREVIEW_CHARS:
+            report.append(f"preview below is the first {REA_PREVIEW_CHARS} characters; it is incomplete, do not parse it as JSON")
+        report += ["", "stdout:", preview]
+        if err:
+            report += ["", "stderr:", err.decode("utf-8", "replace")[-8_000:]]
+        return "\n".join(report)
