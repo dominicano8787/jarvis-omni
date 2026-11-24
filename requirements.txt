@@ -17,3 +17,5 @@ python-multipart>=0.0.20
 edge-tts>=7.0.0
 pillow>=10.0.0
 duckduckgo-search>=8.0.0
+pyautogui>=0.9.54
+mss>=9.0.0

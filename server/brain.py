@@ -36,6 +36,44 @@ SERVER_TOOLS = [
 
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
+# Screenshots are large. Only the newest few stay in the conversation as
+# images; older ones become a short placeholder so long computer-use runs do
+# not grow the context without bound.
+KEEP_SCREENSHOTS = 3
+
+
+def _text_of(content) -> str:
+    """Plain text of a tool result, for previews and persistence."""
+    if isinstance(content, str):
+        return content
+    return "\n".join(b.get("text", "") for b in content if b.get("type") == "text")
+
+
+def _without_images(content):
+    if isinstance(content, str):
+        return content
+    return [b if b.get("type") != "image" else {"type": "text", "text": "[screenshot omitted]"}
+            for b in content]
+
+
+def prune_screenshots(messages: list, keep: int = KEEP_SCREENSHOTS) -> None:
+    """Replace all but the newest `keep` screenshot images with placeholders."""
+    seen = 0
+    for msg in reversed(messages):
+        content = msg.get("content")
+        if msg.get("role") != "user" or not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "tool_result":
+                continue
+            inner = block.get("content")
+            if not isinstance(inner, list):
+                continue
+            if any(b.get("type") == "image" for b in inner):
+                seen += 1
+                if seen > keep:
+                    block["content"] = _without_images(inner)
+
 
 class Engine:
     """Anthropic-backed cognition engine with a manual agentic loop."""
@@ -218,7 +256,7 @@ class Engine:
                 "id": block.id,
                 "name": name,
                 "ok": not is_error,
-                "preview": text[:1200],
+                "preview": _text_of(text)[:1200],
             })
             results.append({
                 "type": "tool_result",
@@ -298,8 +336,11 @@ class Engine:
                 if not results:
                     break
                 messages.append({"role": "user", "content": results})
+                prune_screenshots(messages)
                 if persist:
-                    self.store.append(session_id, "user", results)
+                    self.store.append(session_id, "user", [
+                        {**r, "content": _without_images(r["content"])} for r in results
+                    ])
                 continue
 
             if stop == "max_tokens":
@@ -323,12 +364,25 @@ class Engine:
 # Local backend -- the lane for work the hosted models will not take
 # ==========================================================================
 
-class OllamaEngine:
-    """Streaming client for a locally hosted open-weights model.
+def ollama_tools() -> list[dict]:
+    """Jarvis's local tools in the function-calling format Ollama expects."""
+    return [
+        {"type": "function", "function": {
+            "name": d["name"], "description": d["description"], "parameters": d["input_schema"],
+        }}
+        for d in tools.schemas_for_api()
+    ]
 
-    No tools, no server-side search: this is the offline/unrestricted lane,
-    and the tradeoff is capability. Reasoning models that emit a `thinking`
-    field stream into the same cognition pane.
+
+class OllamaEngine:
+    """Local open-weights brain with the same tools as the cloud brain.
+
+    Uses Ollama's native /api/chat with function calling, and the same
+    approval-gated executor, so "switch to your local brain" keeps Jarvis's
+    hands: shell, files, reverse engineering and computer control. Models
+    that do not support tools are retried once without them. Reasoning
+    models that emit a `thinking` field stream into the cognition pane.
+    Screenshots are passed as images, which only vision models can read.
     """
 
     def __init__(self, memory: MemoryTool, model: str | None = None,
@@ -344,21 +398,16 @@ class OllamaEngine:
         except httpx.HTTPError:
             return False
 
-    async def run(self, messages: list[dict], expert_key: str | None, emit: Emit) -> str:
-        system = experts.build_system_prompt(expert_key, self.memory.digest())
-        payload = {
-            "model": self.model,
-            "stream": True,
-            "think": True,
-            "messages": [{"role": "system", "content": system}, *messages],
-        }
+    async def _stream(self, payload: dict, emit: Emit) -> tuple[dict, str | None]:
+        """One streamed call. Returns (assistant message, error text or None)."""
         answer: list[str] = []
+        calls: list[dict] = []
         opened = {"cog": False, "ans": False}
         async with httpx.AsyncClient(timeout=None) as c:
             async with c.stream("POST", f"{self.host}/api/chat", json=payload) as r:
                 if r.status_code != 200:
-                    await emit({"type": "error", "message": f"Ollama returned {r.status_code}"})
-                    return ""
+                    body = (await r.aread()).decode("utf-8", "replace")[:400]
+                    return {}, f"Ollama returned {r.status_code}: {body}"
                 async for line in r.aiter_lines():
                     if not line.strip():
                         continue
@@ -366,6 +415,8 @@ class OllamaEngine:
                         chunk = json.loads(line)
                     except json.JSONDecodeError:
                         continue
+                    if chunk.get("error"):
+                        return {}, str(chunk["error"])
                     msg = chunk.get("message") or {}
                     if thought := msg.get("thinking"):
                         if not opened["cog"]:
@@ -378,7 +429,84 @@ class OllamaEngine:
                             opened["ans"] = True
                         answer.append(piece)
                         await emit({"type": "answer", "delta": piece})
+                    calls.extend(msg.get("tool_calls") or [])
                     if chunk.get("done"):
                         break
+        out: dict = {"role": "assistant", "content": "".join(answer)}
+        if calls:
+            out["tool_calls"] = calls
+        return out, None
+
+    async def run(self, messages: list[dict], expert_key: str | None, emit: Emit,
+                  executor: tools.Executor | None = None) -> str:
+        """Drive one turn. `messages` is plain {role, content} history and is
+        extended in place with the assistant and tool messages."""
+        system = experts.build_system_prompt(expert_key, self.memory.digest())
+        system += (
+            "\n\n---\n\n# Runtime\nYou are running as a local model through "
+            f"Ollama ({self.model}). Server-side web search is not available "
+            "on this brain; use your local tools."
+        )
+        use_tools = executor is not None
+        final: list[str] = []
+        for iteration in range(1, config.MAX_TOOL_ITERATIONS + 1):
+            await emit({"type": "status", "state": "thinking", "iteration": iteration})
+            payload = {
+                "model": self.model,
+                "stream": True,
+                "think": True,
+                "messages": [{"role": "system", "content": system}, *messages],
+            }
+            if use_tools:
+                payload["tools"] = ollama_tools()
+            reply, err = await self._stream(payload, emit)
+            if err and ("think" in err.lower()):
+                payload.pop("think", None)
+                reply, err = await self._stream(payload, emit)
+            if err and use_tools and "tool" in err.lower():
+                use_tools = False
+                await emit({"type": "notice", "text": f"{self.model} does not support tools; answering without them."})
+                payload.pop("tools", None)
+                reply, err = await self._stream(payload, emit)
+            if err:
+                await emit({"type": "error", "message": err})
+                break
+            messages.append(reply)
+            if reply.get("content"):
+                final.append(reply["content"])
+            calls = reply.get("tool_calls") or []
+            if not calls or executor is None:
+                break
+            await emit({"type": "status", "state": "acting"})
+            for n, call in enumerate(calls):
+                fn = call.get("function") or {}
+                name = fn.get("name", "?")
+                args = fn.get("arguments") or {}
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except json.JSONDecodeError:
+                        args = {}
+                call_id = f"local-{iteration}-{n}"
+                await emit({"type": "tool_open", "id": call_id, "name": name, "server": False})
+                await emit({"type": "tool_run", "id": call_id, "name": name, "input": args})
+                result, is_error = await executor.run(name, args)
+                text = _text_of(result)
+                await emit({"type": "tool_done", "id": call_id, "name": name,
+                            "ok": not is_error, "preview": text[:1200]})
+                messages.append({"role": "tool", "tool_name": name, "content": text})
+                images = [b["source"]["data"] for b in (result if isinstance(result, list) else [])
+                          if b.get("type") == "image"]
+                if images:
+                    messages.append({"role": "user", "content": f"[{name} screenshot]", "images": images})
+            # Keep only the newest screenshots as images.
+            seen = 0
+            for m in reversed(messages):
+                if m.get("images"):
+                    seen += 1
+                    if seen > KEEP_SCREENSHOTS:
+                        m.pop("images")
+        else:
+            await emit({"type": "notice", "text": f"Stopped after {config.MAX_TOOL_ITERATIONS} tool iterations."})
         await emit({"type": "turn_end", "stop_reason": "end_turn"})
-        return "".join(answer)
+        return "\n".join(final)

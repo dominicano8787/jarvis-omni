@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 ### Added
+- **Brain & voice switchboard** (`server/switchboard.py`): spoken commands switch between the cloud brain, a local Ollama model (checked against installed models) and a configurable local "uncensored" model, and between Edge, ElevenLabs and local voices. Handled before any model call; persisted in `data/switchboard.json`; also `GET/POST /api/switchboard` and the WebSocket `settings` frame.
+- **Local brain gets tools** (`server/brain.py`): `OllamaEngine` now runs a function-calling loop with the same approval-gated executor, falls back to no tools for models without tool support, and receives screenshots as images.
+- **Computer takeover** (`server/computer_use.py`, `screen_capture` + `computer_action` tools): screenshot → act → fresh screenshot, DPI-aware coordinate mapping, kill switch (screen-corner fail-safe, HUD interrupt, `POST /api/computer/stop`). Old screenshots are pruned from context.
+- **Voice modes** (`server/real_media_engine.py`): `/api/tts/speak` honours the switchboard voice: ElevenLabs TTS, Edge neural, or fully local (Windows SAPI or `JARVIS_LOCAL_TTS_URL`).
 - **REA "reverse-engineer-anything" skill** (`skills/reverse-engineer-anything/`, vendored from `morluto/rea` at `42bbf33`, MIT): the SKILL.md is appended to the Reverse Engineering profile's system prompt, and its reference guides are readable with `read_file`.
 - **`rea_cli` tool** (`server/tools.py`): runs a REA CLI command (installed `rea` or `npx -y rea-agents@latest`) from `data/rea`, confines the target path to the workspace roots, saves full stdout to `data/rea/results/`, and returns a preview. Gated behind operator approval like other code-running tools.
 

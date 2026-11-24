@@ -575,6 +575,51 @@ async def save_uploaded_file(filename: str, content: bytes, content_type: str = 
 # 6. Male British Neural Voice TTS (en-GB-RyanNeural — Never Female!)
 # ==============================================================================
 
+async def _elevenlabs_tts(text: str, out: Path) -> Optional[Path]:
+    """ElevenLabs text-to-speech. None on any failure so callers fall back."""
+    api_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
+    if not api_key:
+        return None
+    voice_id = os.getenv("ELEVENLABS_VOICE_ID", "").strip() or "21m00Tcm4TlvDq8ikWAM"
+    model_id = os.getenv("ELEVENLABS_TTS_MODEL", "eleven_flash_v2_5").strip()
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.post(
+                f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
+                params={"output_format": "mp3_44100_128"},
+                headers={"xi-api-key": api_key, "accept": "audio/mpeg"},
+                json={"text": text, "model_id": model_id},
+            )
+        if r.status_code == 200 and len(r.content) > 500:
+            out.write_bytes(r.content)
+            return out
+    except httpx.HTTPError:
+        pass
+    return None
+
+
+async def _local_tts_server(text: str, key: str) -> Optional[Path]:
+    """Optional local TTS server (e.g. a VoiceStudio voice clone).
+
+    Set JARVIS_LOCAL_TTS_URL to an endpoint that accepts POST {"text": ...}
+    and returns audio bytes. Without it the local voice is Windows SAPI.
+    """
+    url = os.getenv("JARVIS_LOCAL_TTS_URL", "").strip()
+    if not url:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=60) as c:
+            r = await c.post(url, json={"text": text})
+        if r.status_code != 200 or len(r.content) < 500:
+            return None
+        ext = ".wav" if "wav" in r.headers.get("content-type", "") else ".mp3"
+        out = TTS_CACHE_DIR / f"jarvis_{key}{ext}"
+        out.write_bytes(r.content)
+        return out
+    except httpx.HTTPError:
+        return None
+
+
 async def synthesize_male_british_tts(text: str, voice: str = "en-GB-RyanNeural") -> Optional[Path]:
     """Generates an MP3 with Paul Bettany / J.A.R.V.I.S. style British Male Neural Voice."""
     clean = re.sub(r"```[\s\S]*?```", "Code block displayed on your HUD, Sir.", text or "")
@@ -594,12 +639,26 @@ async def synthesize_male_british_tts(text: str, voice: str = "en-GB-RyanNeural"
     if any(fem in voice.lower() for fem in ("sonia", "hazel", "libby", "maisie", "zira", "aria", "jenny", "female")):
         voice = "en-GB-RyanNeural"
 
-    key = hashlib.md5(f"{voice}:{clean}".encode("utf-8")).hexdigest()[:16]
+    from .switchboard import state as _switchboard_state
+    mode = _switchboard_state().voice   # "edge" | "elevenlabs" | "local"
+
+    key = hashlib.md5(f"{mode}:{voice}:{clean}".encode("utf-8")).hexdigest()[:16]
     mp3_path = TTS_CACHE_DIR / f"jarvis_{key}.mp3"
     if mp3_path.is_file() and mp3_path.stat().st_size > 500:
         return mp3_path
 
+    if mode == "elevenlabs":
+        spoken = await _elevenlabs_tts(clean, mp3_path)
+        if spoken:
+            return spoken
+    elif mode == "local":
+        spoken = await _local_tts_server(clean, key)
+        if spoken:
+            return spoken
+
     try:
+        if mode == "local":
+            raise RuntimeError("local voice: skip the cloud Edge voice")
         import edge_tts
         comm = edge_tts.Communicate(clean, voice=voice, rate="+5%", pitch="-4Hz")
         await comm.save(str(mp3_path))

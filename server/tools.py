@@ -25,7 +25,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from . import config
+from . import computer_use, config
 
 MAX_READ_BYTES = 400_000
 SHELL_TIMEOUT = 180
@@ -286,6 +286,55 @@ DEFINITIONS: list[dict] = [
         },
         "danger": "medium",
     },
+    {
+        "name": "screen_capture",
+        "description": (
+            "Take a screenshot of the operator's screen and look at it. Use it "
+            "before computer_action to see where things are. Coordinates for "
+            "computer_action are in this screenshot's pixels."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "monitor": {"type": "integer", "description": "1 = primary monitor (default)."},
+            },
+        },
+        "danger": "none",
+    },
+    {
+        "name": "computer_action",
+        "description": (
+            "Control the operator's PC: click, double_click, right_click, move, "
+            "drag (x,y -> x2,y2), type text, key (enter, tab, esc, win...), "
+            "hotkey (e.g. ['ctrl','s']), scroll (amount; negative = down), or "
+            "wait (seconds). x/y are pixels in the most recent screen_capture. "
+            "Returns a fresh screenshot: check it to confirm the action worked "
+            "before the next step, and never assume a click landed. Do one "
+            "action per call. Stop and ask before anything that spends money, "
+            "sends a message, deletes data or submits a form."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": [
+                    "click", "double_click", "right_click", "move", "drag", "type",
+                    "key", "hotkey", "scroll", "wait",
+                ]},
+                "x": {"type": "number"},
+                "y": {"type": "number"},
+                "x2": {"type": "number"},
+                "y2": {"type": "number"},
+                "text": {"type": "string"},
+                "key": {"type": "string"},
+                "keys": {"type": "array", "items": {"type": "string"}},
+                "amount": {"type": "integer"},
+                "seconds": {"type": "number"},
+                "why": {"type": "string", "description": "One line the operator sees on the approval card."},
+            },
+            "required": ["action", "why"],
+        },
+        "danger": "medium",
+    },
 ]
 
 BY_NAME = {d["name"]: d for d in DEFINITIONS}
@@ -316,8 +365,12 @@ class Executor:
         if not await self._approve(name, payload, why):
             raise ToolDenied(f"{name} was declined by the operator")
 
-    async def run(self, name: str, payload: dict) -> tuple[str, bool]:
-        """Execute one tool call. Returns (result_text, is_error)."""
+    async def run(self, name: str, payload: dict) -> tuple[str | list, bool]:
+        """Execute one tool call. Returns (result, is_error).
+
+        The result is text, or a list of Anthropic content blocks when the
+        tool returns an image (screen_capture, computer_action).
+        """
         try:
             await self._gate(name, payload)
             handler = getattr(self, f"_t_{name}", None)
@@ -329,7 +382,12 @@ class Executor:
                 f"Declined: {exc}. Do not retry this call. Either propose a "
                 f"different approach or ask the operator what they would prefer."
             ), True
-        except (ValueError, OSError) as exc:
+        except computer_use.Stopped as exc:
+            return (
+                f"Stopped: {exc}. The operator pulled the kill switch. Do not "
+                f"retry; report what you had done so far and wait."
+            ), True
+        except (ValueError, OSError, RuntimeError) as exc:
             return f"Error: {exc.__class__.__name__}: {exc}", True
 
     # -- implementations ---------------------------------------------------
@@ -462,6 +520,22 @@ class Executor:
             proc.kill()
             return f"Error: Ghidra exceeded {GHIDRA_TIMEOUT}s and was killed."
         return self._format_proc(proc.returncode, out, err, cap=40_000)
+
+    @staticmethod
+    def _image_blocks(png_b64: str, text: str) -> list:
+        return [
+            {"type": "text", "text": text},
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": png_b64}},
+        ]
+
+    async def _t_screen_capture(self, p: dict) -> list:
+        png, desc = await asyncio.to_thread(computer_use.screenshot, int(p.get("monitor") or 1))
+        return self._image_blocks(png, desc)
+
+    async def _t_computer_action(self, p: dict) -> list:
+        done = await asyncio.to_thread(computer_use.act, p)
+        png, desc = await asyncio.to_thread(computer_use.screenshot, computer_use._view["monitor"])
+        return self._image_blocks(png, f"Done: {done}. Fresh screenshot follows. {desc}")
 
     async def _t_rea_cli(self, p: dict) -> str:
         command = str(p.get("command", "")).strip()

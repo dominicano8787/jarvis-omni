@@ -26,7 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import config, experts, tools
+from . import computer_use, config, experts, switchboard, tools
 from .access_gate import AccessGate, cors_origins
 from .brain import Engine, OllamaEngine
 from .cognitive_core import JarvisCognitiveCore
@@ -101,7 +101,54 @@ async def api_status():
         "research_passes": config.RESEARCH_MAX_PASSES,
         "totals": store.totals(),
         "voice": "en-GB-RyanNeural (British Male J.A.R.V.I.S.)",
+        "switchboard": switchboard.state().describe(),
     }
+
+
+@app.get("/api/switchboard")
+async def api_switchboard():
+    """Which brain and voice are active, and which local models Ollama has."""
+    return {**switchboard.state().describe(),
+            "installed_models": await switchboard.installed_models()}
+
+
+@app.post("/api/switchboard")
+async def api_switchboard_set(request: Request):
+    """Switch brain/voice: {"command": "switch to your local brain"} or
+    {"brain": "local", "model": "gemma4:12b"} or {"voice": "elevenlabs"}."""
+    if not _is_agent_authorized(request.headers):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    data = await request.json()
+    if data.get("command"):
+        cmd = switchboard.parse(str(data["command"]))
+        if not cmd:
+            return JSONResponse({"error": "not a switch command"}, status_code=400)
+        changed, said = await switchboard.apply(cmd)
+    else:
+        changed, said = False, ""
+        try:
+            if data.get("brain"):
+                if data["brain"] == "cloud":
+                    switchboard.set_brain("cloud")
+                    changed, said = True, "cloud brain"
+                else:
+                    model = data.get("model") or ""
+                    changed, said = await switchboard.apply(
+                        switchboard.Command("brain", data["brain"], model))
+            if data.get("voice"):
+                changed, said = await switchboard.apply(switchboard.Command("voice", data["voice"]))
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+    return {"changed": changed, "said": said, **switchboard.state().describe()}
+
+
+@app.post("/api/computer/stop")
+async def api_computer_stop(request: Request):
+    """Kill switch for computer control. Re-armed by the next prompt."""
+    if not _is_agent_authorized(request.headers):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    computer_use.stop()
+    return {"stopped": True}
 
 
 def _is_agent_authorized(headers, query_token: str | None = None) -> bool:
@@ -173,6 +220,7 @@ class Session:
         self.ws = ws
         self.id = uuid.uuid4().hex[:12]
         self.messages: list = []
+        self.local_messages: list = []   # Ollama-format history for local brains
         self.expert = "general"
         self.effort = config.DEFAULT_EFFORT
         self.autonomous = config.AUTONOMOUS_DEFAULT
@@ -240,22 +288,40 @@ class Session:
         await self.emit({"type": "memory_update", "files": memory.listing()})
 
     async def handle_prompt_local(self, text: str) -> None:
-        local = OllamaEngine(memory)
+        local = OllamaEngine(memory, model=switchboard.state().active_model())
         if not await local.available():
             await self.emit({
                 "type": "error",
                 "message": (
-                    f"No local model server at {config.OLLAMA_HOST}. Install Ollama "
-                    "and pull a model, or switch the backend back to Anthropic."
+                    f"No local model server at {config.OLLAMA_HOST}. Start Ollama, "
+                    "or say \"switch to your cloud brain\"."
                 ),
             })
             return
+        if not self.local_messages:
+            # Carry the plain-text part of the cloud conversation across.
+            self.local_messages = [
+                {"role": m["role"], "content": m["content"]}
+                for m in self.messages if isinstance(m.get("content"), str)
+            ]
+        self.local_messages.append({"role": "user", "content": text})
         self.messages.append({"role": "user", "content": text})
-        reply = await local.run(
-            [m for m in self.messages if isinstance(m.get("content"), str)],
-            self.expert, self.emit,
-        )
-        self.messages.append({"role": "assistant", "content": reply})
+        store.append(self.id, "user", text)
+        reply = await local.run(self.local_messages, self.expert, self.emit,
+                                executor=self.executor())
+        if reply:
+            self.messages.append({"role": "assistant", "content": reply})
+            store.append(self.id, "assistant", reply)
+        await self.emit({"type": "status", "state": "idle"})
+
+    async def handle_switch(self, cmd: "switchboard.Command") -> None:
+        """Answer a spoken switch command without calling any model."""
+        changed, said = await switchboard.apply(cmd)
+        await self.emit({"type": "answer_open"})
+        await self.emit({"type": "answer", "delta": said})
+        await self.emit({"type": "switchboard", "changed": changed,
+                         **switchboard.state().describe()})
+        await self.emit({"type": "turn_end", "stop_reason": "end_turn"})
         await self.emit({"type": "status", "state": "idle"})
 
 
@@ -270,6 +336,7 @@ async def ws_endpoint(ws: WebSocket):
         "address_as": config.ADDRESS_AS,
         "model": config.ANTHROPIC_MODEL,
         "backend": config.BACKEND,
+        "switchboard": switchboard.state().describe(),
         "effort": session.effort,
         "autonomous": session.autonomous,
         "key_present": config.api_key_present(),
@@ -299,17 +366,21 @@ async def ws_endpoint(ws: WebSocket):
                 session.expert = msg.get("expert") or session.expert
                 session.effort = msg.get("effort") or session.effort
                 deep = bool(msg.get("deep_research"))
-                runner = (
-                    session.handle_prompt_local(text)
-                    if config.BACKEND == "ollama"
-                    else session.handle_prompt(text, deep)
-                )
+                computer_use.rearm()  # a new instruction re-arms computer control
+                cmd = switchboard.parse(text)
+                if cmd:
+                    runner = session.handle_switch(cmd)
+                elif switchboard.state().brain != "cloud":
+                    runner = session.handle_prompt_local(text)
+                else:
+                    runner = session.handle_prompt(text, deep)
                 session.task = asyncio.create_task(_guard(session, runner))
 
             elif kind == "approve":
                 session.resolve(msg.get("id", ""), bool(msg.get("allow")))
 
             elif kind == "interrupt":
+                computer_use.stop()
                 if session.task and not session.task.done():
                     session.task.cancel()
                     await session.emit({"type": "notice", "text": "Turn interrupted."})
@@ -325,6 +396,16 @@ async def ws_endpoint(ws: WebSocket):
                     session.effort = msg["effort"]
                 if "autonomous" in msg:
                     session.autonomous = bool(msg["autonomous"])
+                if msg.get("brain") or msg.get("voice"):
+                    with suppress(ValueError):
+                        if msg.get("brain") == "cloud":
+                            switchboard.set_brain("cloud")
+                        elif msg.get("brain"):
+                            await switchboard.apply(switchboard.Command(
+                                "brain", msg["brain"], msg.get("local_model") or ""))
+                        if msg.get("voice"):
+                            await switchboard.apply(switchboard.Command("voice", msg["voice"]))
+                    await session.emit({"type": "switchboard", **switchboard.state().describe()})
                 await session.emit({
                     "type": "settings",
                     "expert": session.expert,
@@ -334,6 +415,7 @@ async def ws_endpoint(ws: WebSocket):
 
             elif kind == "reset":
                 session.messages = []
+                session.local_messages = []
                 await session.emit({"type": "reset_ok"})
 
             elif kind == "ping":
