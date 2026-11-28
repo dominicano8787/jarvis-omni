@@ -16,8 +16,9 @@ knowledge-galaxy/workshop-shots/
 # The Galaxy stays private: nothing in it is published
 knowledge-galaxy/
 
-# Private runtime data: browser profile, memory databases, reports
+# Private runtime data: browser profile, memory databases, reports, captured notes and teardowns
 data/
+captures/
 reports/
 *.db
 *.db-journal
