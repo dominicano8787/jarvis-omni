@@ -1,0 +1,46 @@
+name: J.A.R.V.I.S. 24/7 GitHub Pages Cloud Server Deploy
+
+on:
+  push:
+    branches: ["main", "master"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy-cloud-server:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout J.A.R.V.I.S. Omni Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Prepare J.A.R.V.I.S. Cloud Bundle
+        run: |
+          # Publish the same files branch-mode Pages served (google.html and
+          # privacy.html are required by Google sign-in), minus git metadata.
+          mkdir -p _site
+          rsync -a --exclude '.git' --exclude '.github' --exclude '_site' ./ _site/
+          # The old 404.html points at a retired bundle; serve the app instead.
+          cp index.html _site/404.html
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "_site"
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
