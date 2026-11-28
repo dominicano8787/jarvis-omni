@@ -81,6 +81,12 @@ filesystem access, and a deep-research sweep. Use them when the answer depends
 on something you cannot know from the conversation -- current information,
 the contents of a file, the state of the machine. Write durable learnings to
 memory as you go; consult memory before starting anything non-trivial.
+
+You can also see and drive the operator's PC: screen_capture to look, and
+computer_action to click, type, press keys and scroll. Look before you act,
+check the fresh screenshot after every action, and stop to ask before anything
+that spends money, sends a message, deletes data or submits a form. If the
+operator says "stop", or an action reports the kill switch, stop at once.
 """.strip()
 
 
@@ -142,6 +148,10 @@ Local toolchain available through the shell: Ghidra 12.1.4 at D:\\ghidra
 D:\\ghidra\\ghidra_12.1.4_PUBLIC\\support\\analyzeHeadless.bat), plus whatever
 else is on PATH. Use `strings`, hashing, and PE/ELF header parsing before
 reaching for a full decompile -- most questions do not need one.
+
+For shipped apps and packaged artifacts (ASAR/Electron, APK, PyInstaller, Bun,
+Deno, .NET, firmware, captures), follow the REA skill appended below and run
+its commands with the `rea_cli` tool.
 """.strip(),
 ))
 
@@ -519,6 +529,41 @@ def get(key: str | None) -> Expert:
     return EXPERTS.get(key or "general", EXPERTS["general"])
 
 
+REA_SKILL_DIR = config.ROOT / "skills" / "reverse-engineer-anything"
+
+
+def _load_rea_skill() -> str:
+    """The vendored REA skill, frontmatter stripped, or "" if it is missing."""
+    path = REA_SKILL_DIR / "SKILL.md"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    if text.startswith("---"):
+        end = text.find("\n---", 3)
+        if end != -1:
+            text = text[end + 4:]
+    return (
+        "# Skill: reverse-engineer-anything (REA)\n"
+        f"Reference guides linked as `references/<name>.md` are at "
+        f"{REA_SKILL_DIR / 'references'}; open the one the task needs with "
+        "read_file. The REA MCP server is not connected here: reach REA "
+        "through the `rea_cli` tool. Most target-free MCP tools have a CLI "
+        "command of the same name in kebab-case (inspect_artifact -> "
+        "inspect-artifact, audit_release_exposure -> audit-release-exposure). "
+        "Each CLI call is its own process, so MCP session steps such as "
+        "open_binary/close_binary have no CLI form: for native targets use "
+        "`analyze`, `decompile`, `function`, `xrefs` or `search` with "
+        "`--provider ghidra` (Ghidra is at D:\\ghidra), and check `providers` "
+        "or `doctor` when a provider is unavailable. Run a command with "
+        "`--help` when its flags are unclear.\n\n"
+        + text.strip()
+    )
+
+
+REA_SKILL = _load_rea_skill()
+
+
 def build_system_prompt(key: str | None, memory_digest: str = "") -> str:
     """Assemble the full system prompt for a turn.
 
@@ -527,6 +572,8 @@ def build_system_prompt(key: str | None, memory_digest: str = "") -> str:
     """
     expert = get(key)
     parts = [BASE_PROMPT, f"# Active profile: {expert.label}\n{expert.prompt}"]
+    if expert.key == "reverse" and REA_SKILL:
+        parts.append(REA_SKILL)
     if memory_digest:
         parts.append(
             "# Persistent memory\n"

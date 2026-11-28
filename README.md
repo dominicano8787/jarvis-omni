@@ -27,12 +27,50 @@
 
 ### 4. 🌐 Core Workstation, Reverse Engineering, Physical AI & Native Builds
 - **Ghidra 12.1.4 SRE Suite (`server/ghidra_engine.py`)**: PE/ELF static binary triage, Shannon entropy scoring, and C decompilation.
+- **REA skill (`skills/reverse-engineer-anything/`)**: The Reverse Engineering profile now carries the [REA](https://github.com/morluto/rea) "reverse-engineer-anything" skill (v63) and its 8 reference guides, and runs REA through the `rea_cli` tool (an installed `rea`, or `npx -y rea-agents@latest`; needs Node.js). Results are saved under `data/rea/results`.
 - **WendyOS & Physical AI Edge Harness (`server/wendy_engine.py`)**: Full `wendylabsinc` 10-repository integration + NVIDIA Jetson Orin Nano A/B OTA updates.
 - **Autonomous ReAct Agentic Core (`server/agentic_engine.py`)**: 16-tool multi-step ReAct agent loop + 24/7 GitHub Cloud Server (`https://dominicano8787.github.io/jarvis-omni/`).
 - **Native Executables**:
   - Windows Standalone Launcher: `JARVIS.exe`
   - Windows Self-Extracting Installer: `JARVIS-Setup-v4.0-x64.exe`
   - Samsung Galaxy Z Fold 7 (`SM-F966U`) Signed APK: `JARVIS-ZFold7-SM-F966U-v4.0.apk`
+
+---
+
+## 🎙️ Brain & Voice Switching, Local "Uncensored" Brain, Computer Takeover
+
+Modeled on the abilities in Zubair Trabzada's "Jarvis" videos (AI Workshop), built on this codebase.
+
+### Say it, and Jarvis switches (no model call, instant)
+| Say | What happens |
+|---|---|
+| "Jarvis, switch to your local brain" | Answers with your Ollama model (`JARVIS_OLLAMA_MODEL`) |
+| "Switch to Gemma 4 12B" / "switch to qwen three point five 9b" | Checks Ollama has that model pulled, then switches; lists what is installed if not |
+| "Switch to uncensored mode" | Uses `JARVIS_UNCENSORED_MODEL` (see below) |
+| "Go back to your cloud brain" | Back to Claude (`JARVIS_MODEL`) |
+| "Switch to your ElevenLabs voice" / "local voice" / "standard voice" | Changes how `/api/tts/speak` talks |
+| "Which brain are you using?" | Reports brain, model and voice |
+
+The choice is saved in `data/switchboard.json` and survives restarts. It can also be set over the WebSocket `settings` frame (`brain`, `local_model`, `voice`) or `POST /api/switchboard` (`{"command": "switch to your local brain"}`); `GET /api/switchboard` lists installed Ollama models.
+
+**The local brain now has tools.** It uses the same shell, file, Ghidra, REA and computer-control tools as the cloud brain, through Ollama function calling and the same approval cards. Use a model that supports tools (Qwen 3.x, Gemma 3/4, Llama 3.x and gpt-oss do); others answer without tools. The local brain has no server-side web search.
+
+Size models to Platano's memory: roughly 0.6 GB per billion parameters at 4-bit (a 9B model needs about 6 GB, 27B about 16 GB).
+
+### Uncensored brain
+"Uncensored" means a local open-weights model with no cloud provider's moderation, typically an *abliterated* GGUF. Pick one on Hugging Face, load it into Ollama (`ollama pull hf.co/<user>/<repo>:Q4_K_M`, or `ollama create` with a Modelfile), then set `JARVIS_UNCENSORED_MODEL` to its tag. **The approval gate still applies:** a model without refusals will follow instructions injected by web pages and files it reads, so shell, file writes and computer control still need a click unless autonomous mode is on.
+
+### Computer takeover
+Two new tools: `screen_capture` (look at the screen) and `computer_action` (click, double/right click, move, drag, type, key, hotkey, scroll, wait). Every action returns a fresh screenshot, so Jarvis checks the result before the next step. Coordinates are mapped back from the scaled screenshot and are DPI-aware on Windows. Only the newest 3 screenshots stay in the conversation.
+
+**Kill switch**, any of these stops the next action: slam the mouse into a screen corner, press interrupt in the HUD, or `POST /api/computer/stop`. A new prompt re-arms it. Every action needs approval unless autonomous mode is on.
+
+Needs `pip install pyautogui mss` (added to `requirements.txt`). Jarvis must run in your logged-in desktop session, not as a service.
+
+### Voices
+- `edge` (default): Edge neural `en-GB-RyanNeural`, with Windows SAPI as the offline fallback.
+- `elevenlabs`: needs `ELEVENLABS_API_KEY`; optional `ELEVENLABS_VOICE_ID`, `ELEVENLABS_TTS_MODEL` (default `eleven_flash_v2_5`).
+- `local`: no cloud at all. Windows SAPI, or a local voice-clone server if `JARVIS_LOCAL_TTS_URL` points at an endpoint that takes `POST {"text": ...}` and returns audio. VoiceStudio is one option; check its API docs and wrap it if its request format differs. Clone only voices you have permission to use.
 
 ---
 

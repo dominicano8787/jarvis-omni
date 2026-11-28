@@ -14,19 +14,25 @@ Design notes:
 from __future__ import annotations
 
 import asyncio
+import datetime
 import hashlib
+import json
 import math
 import re
+import shutil
 import struct
 from collections import Counter
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from . import config
+from . import computer_use, config
 
 MAX_READ_BYTES = 400_000
 SHELL_TIMEOUT = 180
 GHIDRA_TIMEOUT = 1800
+REA_TIMEOUT = 1800
+REA_PREVIEW_CHARS = 30_000
+REA_COMMAND_RE = re.compile(r"^[a-z][a-z0-9-]{1,63}$")
 
 
 class ToolDenied(Exception):
@@ -236,6 +242,99 @@ DEFINITIONS: list[dict] = [
         },
         "danger": "medium",
     },
+    {
+        "name": "rea_cli",
+        "description": (
+            "Run a REA (Reverse Engineer Anything) CLI command, e.g. "
+            "analyze-javascript-application, inspect-artifact, "
+            "audit-release-exposure, inspect-pe-imports, inspect-elf-notes, "
+            "inspect-analysis-view. Follow the reverse-engineer-anything skill "
+            "for which command fits the target. Uses an installed `rea` if one "
+            "is on PATH, otherwise `npx -y rea-agents@latest`. The full stdout "
+            "is saved to a file under data/rea/results and only a preview is "
+            "returned; read the saved file, or pass it to inspect-analysis-view, "
+            "for the rest. Run `rea <command> --help` (command 'help' is not a "
+            "command; pass extra_args ['--help']) when unsure of a command's flags."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "REA subcommand in kebab-case, e.g. analyze-javascript-application.",
+                },
+                "target": {
+                    "type": "string",
+                    "description": "Optional absolute path to the file or folder to analyze. Passed first after the command.",
+                },
+                "extra_args": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Further CLI arguments, e.g. ['--provider', 'ghidra'] or ['--help'].",
+                },
+                "json_output": {
+                    "type": "boolean",
+                    "description": "Append --json (default true).",
+                },
+                "stdin_json": {
+                    "type": "object",
+                    "description": "Optional JSON request sent on stdin; '-' is appended to the arguments.",
+                },
+                "why": {"type": "string"},
+            },
+            "required": ["command", "why"],
+        },
+        "danger": "medium",
+    },
+    {
+        "name": "screen_capture",
+        "description": (
+            "Take a screenshot of the operator's screen and look at it. Use it "
+            "before computer_action to see where things are. Coordinates for "
+            "computer_action are in this screenshot's pixels."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "monitor": {"type": "integer", "description": "1 = primary monitor (default)."},
+            },
+        },
+        "danger": "none",
+    },
+    {
+        "name": "computer_action",
+        "description": (
+            "Control the operator's PC: click, double_click, right_click, move, "
+            "drag (x,y -> x2,y2), type text, key (enter, tab, esc, win...), "
+            "hotkey (e.g. ['ctrl','s']), scroll (amount; negative = down), or "
+            "wait (seconds). x/y are pixels in the most recent screen_capture. "
+            "Returns a fresh screenshot: check it to confirm the action worked "
+            "before the next step, and never assume a click landed. Do one "
+            "action per call. Stop and ask before anything that spends money, "
+            "sends a message, deletes data or submits a form."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": [
+                    "click", "double_click", "right_click", "move", "drag", "type",
+                    "key", "hotkey", "scroll", "wait",
+                ]},
+                "x": {"type": "number"},
+                "y": {"type": "number"},
+                "x2": {"type": "number"},
+                "y2": {"type": "number"},
+                "text": {"type": "string"},
+                "key": {"type": "string"},
+                "keys": {"type": "array", "items": {"type": "string"}},
+                "amount": {"type": "integer"},
+                "seconds": {"type": "number"},
+                "why": {"type": "string", "description": "One line the operator sees on the approval card."},
+            },
+            "required": ["action", "why"],
+        },
+        "danger": "medium",
+    },
 ]
 
 BY_NAME = {d["name"]: d for d in DEFINITIONS}
@@ -266,8 +365,12 @@ class Executor:
         if not await self._approve(name, payload, why):
             raise ToolDenied(f"{name} was declined by the operator")
 
-    async def run(self, name: str, payload: dict) -> tuple[str, bool]:
-        """Execute one tool call. Returns (result_text, is_error)."""
+    async def run(self, name: str, payload: dict) -> tuple[str | list, bool]:
+        """Execute one tool call. Returns (result, is_error).
+
+        The result is text, or a list of Anthropic content blocks when the
+        tool returns an image (screen_capture, computer_action).
+        """
         try:
             await self._gate(name, payload)
             handler = getattr(self, f"_t_{name}", None)
@@ -279,7 +382,12 @@ class Executor:
                 f"Declined: {exc}. Do not retry this call. Either propose a "
                 f"different approach or ask the operator what they would prefer."
             ), True
-        except (ValueError, OSError) as exc:
+        except computer_use.Stopped as exc:
+            return (
+                f"Stopped: {exc}. The operator pulled the kill switch. Do not "
+                f"retry; report what you had done so far and wait."
+            ), True
+        except (ValueError, OSError, RuntimeError) as exc:
             return f"Error: {exc.__class__.__name__}: {exc}", True
 
     # -- implementations ---------------------------------------------------
@@ -412,3 +520,77 @@ class Executor:
             proc.kill()
             return f"Error: Ghidra exceeded {GHIDRA_TIMEOUT}s and was killed."
         return self._format_proc(proc.returncode, out, err, cap=40_000)
+
+    @staticmethod
+    def _image_blocks(png_b64: str, text: str) -> list:
+        return [
+            {"type": "text", "text": text},
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": png_b64}},
+        ]
+
+    async def _t_screen_capture(self, p: dict) -> list:
+        png, desc = await asyncio.to_thread(computer_use.screenshot, int(p.get("monitor") or 1))
+        return self._image_blocks(png, desc)
+
+    async def _t_computer_action(self, p: dict) -> list:
+        done = await asyncio.to_thread(computer_use.act, p)
+        png, desc = await asyncio.to_thread(computer_use.screenshot, computer_use._view["monitor"])
+        return self._image_blocks(png, f"Done: {done}. Fresh screenshot follows. {desc}")
+
+    async def _t_rea_cli(self, p: dict) -> str:
+        command = str(p.get("command", "")).strip()
+        if not REA_COMMAND_RE.match(command):
+            raise ValueError(f"not a REA command name: {command!r}")
+        rea = shutil.which("rea")
+        npx = shutil.which("npx")
+        if rea:
+            base = [rea]
+        elif npx:
+            base = [npx, "-y", "rea-agents@latest"]
+        else:
+            return "Error: neither `rea` nor `npx` is on PATH. Install Node.js, or run `npm install --global rea-agents`."
+        args = [command]
+        if p.get("target"):
+            args.append(str(_confine(p["target"], must_exist=True)))
+        extra = p.get("extra_args") or []
+        if not isinstance(extra, list) or not all(isinstance(a, str) for a in extra):
+            raise ValueError("extra_args must be a list of strings")
+        args.extend(extra)
+        if p.get("json_output", True) and "--json" not in args and "--help" not in args:
+            args.append("--json")
+        stdin_bytes = None
+        if p.get("stdin_json") is not None:
+            stdin_bytes = json.dumps(p["stdin_json"]).encode("utf-8")
+            args.append("-")
+        # REA asks to be run from a trusted directory outside the target.
+        workdir = config.DATA_DIR / "rea"
+        results = workdir / "results"
+        results.mkdir(parents=True, exist_ok=True)
+        proc = await asyncio.create_subprocess_exec(
+            *base, *args,
+            cwd=str(workdir),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            stdin=asyncio.subprocess.PIPE if stdin_bytes is not None else asyncio.subprocess.DEVNULL,
+        )
+        try:
+            out, err = await asyncio.wait_for(proc.communicate(stdin_bytes), timeout=REA_TIMEOUT)
+        except asyncio.TimeoutError:
+            proc.kill()
+            return f"Error: REA exceeded {REA_TIMEOUT}s and was killed."
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        saved = results / f"{stamp}-{command}.json"
+        saved.write_bytes(out)
+        text = out.decode("utf-8", "replace")
+        preview = text[:REA_PREVIEW_CHARS]
+        report = [
+            f"exit code: {proc.returncode}",
+            f"command: {' '.join(['rea', *args])}",
+            f"full stdout ({len(out)} bytes) saved to: {saved}",
+        ]
+        if len(text) > REA_PREVIEW_CHARS:
+            report.append(f"preview below is the first {REA_PREVIEW_CHARS} characters; it is incomplete, do not parse it as JSON")
+        report += ["", "stdout:", preview]
+        if err:
+            report += ["", "stderr:", err.decode("utf-8", "replace")[-8_000:]]
+        return "\n".join(report)
